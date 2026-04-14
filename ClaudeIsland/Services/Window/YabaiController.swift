@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AppKit
 
 /// Controller for yabai window management
 actor YabaiController {
@@ -17,14 +18,28 @@ actor YabaiController {
 
     /// Focus the terminal window for a given Claude PID (tmux only)
     func focusWindow(forClaudePid claudePid: Int) async -> Bool {
+        let tree = ProcessTreeBuilder.shared.buildTree()
+        let isInTmux = ProcessTreeBuilder.shared.isInTmux(pid: claudePid, tree: tree)
+        let terminalPid = ProcessTreeBuilder.shared.findTerminalPid(forProcess: claudePid, tree: tree)
+
+        // Always try to bring the owning terminal app to front (works without yabai too)
+        let activatedApp = await activateTerminalAppIfPossible(terminalPid: terminalPid)
+
         guard await WindowFinder.shared.isYabaiAvailable() else {
-            return false
+            return activatedApp
         }
 
         let windows = await WindowFinder.shared.getAllWindows()
-        let tree = ProcessTreeBuilder.shared.buildTree()
 
-        return await focusTmuxInstance(claudePid: claudePid, tree: tree, windows: windows)
+        if isInTmux {
+            return await focusTmuxInstance(claudePid: claudePid, tree: tree, windows: windows) || activatedApp
+        }
+
+        if let terminalPid {
+            return await focusTerminalWindow(terminalPid: terminalPid, windows: windows) || activatedApp
+        }
+
+        return activatedApp
     }
 
     /// Focus the terminal window for a given working directory (tmux only, fallback)
@@ -143,5 +158,28 @@ actor YabaiController {
         }
 
         return false
+    }
+
+    private func focusTerminalWindow(terminalPid: Int, windows: [YabaiWindow]) async -> Bool {
+        if let window = WindowFinder.shared.findNonClaudeWindow(forTerminalPid: terminalPid, windows: windows) {
+            return await WindowFocuser.shared.focusWindow(id: window.id)
+        }
+
+        if let fallback = WindowFinder.shared.findWindows(forTerminalPid: terminalPid, windows: windows).first {
+            return await WindowFocuser.shared.focusWindow(id: fallback.id)
+        }
+
+        return false
+    }
+
+    private func activateTerminalAppIfPossible(terminalPid: Int?) async -> Bool {
+        guard let terminalPid else { return false }
+
+        return await MainActor.run {
+            guard let app = NSRunningApplication(processIdentifier: pid_t(terminalPid)) else {
+                return false
+            }
+            return app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        }
     }
 }

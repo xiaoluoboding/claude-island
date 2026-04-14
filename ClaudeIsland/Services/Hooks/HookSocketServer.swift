@@ -14,6 +14,7 @@ private let logger = Logger(subsystem: "com.claudeisland", category: "Hooks")
 
 /// Event received from Claude Code hooks
 struct HookEvent: Codable, Sendable {
+    let source: SessionSource
     let sessionId: String
     let cwd: String
     let event: String
@@ -27,6 +28,7 @@ struct HookEvent: Codable, Sendable {
     let message: String?
 
     enum CodingKeys: String, CodingKey {
+        case source
         case sessionId = "session_id"
         case cwd, event, status, pid, tty, tool
         case toolInput = "tool_input"
@@ -36,7 +38,8 @@ struct HookEvent: Codable, Sendable {
     }
 
     /// Create a copy with updated toolUseId
-    init(sessionId: String, cwd: String, event: String, status: String, pid: Int?, tty: String?, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?) {
+    init(source: SessionSource = .claude, sessionId: String, cwd: String, event: String, status: String, pid: Int?, tty: String?, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?) {
+        self.source = source
         self.sessionId = sessionId
         self.cwd = cwd
         self.event = event
@@ -48,6 +51,22 @@ struct HookEvent: Codable, Sendable {
         self.toolUseId = toolUseId
         self.notificationType = notificationType
         self.message = message
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        source = try container.decodeIfPresent(SessionSource.self, forKey: .source) ?? .claude
+        sessionId = try container.decode(String.self, forKey: .sessionId)
+        cwd = try container.decode(String.self, forKey: .cwd)
+        event = try container.decode(String.self, forKey: .event)
+        status = try container.decode(String.self, forKey: .status)
+        pid = try container.decodeIfPresent(Int.self, forKey: .pid)
+        tty = try container.decodeIfPresent(String.self, forKey: .tty)
+        tool = try container.decodeIfPresent(String.self, forKey: .tool)
+        toolInput = try container.decodeIfPresent([String: AnyCodable].self, forKey: .toolInput)
+        toolUseId = try container.decodeIfPresent(String.self, forKey: .toolUseId)
+        notificationType = try container.decodeIfPresent(String.self, forKey: .notificationType)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
     }
 
     var sessionPhase: SessionPhase {
@@ -437,6 +456,7 @@ class HookSocketServer {
             logger.debug("Permission request - keeping socket open for \(event.sessionId.prefix(8), privacy: .public) tool:\(toolUseId.prefix(12), privacy: .public)")
 
             let updatedEvent = HookEvent(
+                source: event.source,
                 sessionId: event.sessionId,
                 cwd: event.cwd,
                 event: event.event,

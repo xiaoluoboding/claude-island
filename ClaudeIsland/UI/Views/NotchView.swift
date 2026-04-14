@@ -26,6 +26,7 @@ struct NotchView: View {
     @State private var isVisible: Bool = false
     @State private var isHovering: Bool = false
     @State private var isBouncing: Bool = false
+    @State private var notificationAutoCloseWorkItem: DispatchWorkItem?
 
     @Namespace private var activityNamespace
 
@@ -213,6 +214,31 @@ struct NotchView: View {
         activityCoordinator.expandingActivity.show && activityCoordinator.expandingActivity.type == .claude
     }
 
+    private var prominentSource: SessionSource {
+        if case .chat(let session) = viewModel.contentType {
+            return session.source
+        }
+
+        if let active = sessionMonitor.instances.first(where: isProminentPhase) {
+            return active.source
+        }
+
+        return sessionMonitor.instances.first?.source ?? .codex
+    }
+
+    private var hasDetectedClaudeSession: Bool {
+        sessionMonitor.instances.contains { $0.source == .claude }
+    }
+
+    private func isProminentPhase(_ session: SessionState) -> Bool {
+        switch session.phase {
+        case .processing, .compacting, .waitingForApproval, .waitingForInput:
+            return true
+        case .idle, .ended:
+            return false
+        }
+    }
+
     /// Whether to show the expanded closed state (processing, pending permission, or waiting for input)
     private var showClosedActivity: Bool {
         isProcessing || hasPendingPermission || hasWaitingForInput
@@ -249,12 +275,17 @@ struct NotchView: View {
             // Left side - crab + optional permission indicator (visible when processing, pending, or waiting for input)
             if showClosedActivity {
                 HStack(spacing: 4) {
-                    ClaudeCrabIcon(size: 14, animateLegs: isProcessing)
+                    SessionSourceBrandIcon(
+                        source: prominentSource,
+                        size: 14,
+                        animate: isProcessing,
+                        prefersClaudeTheme: hasDetectedClaudeSession
+                    )
                         .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
 
                     // Permission indicator only (amber) - waiting for input shows checkmark on right
                     if hasPendingPermission {
-                        PermissionIndicatorIcon(size: 14, color: Color(red: 0.85, green: 0.47, blue: 0.34))
+                        PermissionIndicatorIcon(size: 14, color: prominentSource.accentColor)
                             .matchedGeometryEffect(id: "status-indicator", in: activityNamespace, isSource: showClosedActivity)
                     }
                 }
@@ -281,7 +312,7 @@ struct NotchView: View {
             // Right side - spinner when processing/pending, checkmark when waiting for input
             if showClosedActivity {
                 if isProcessing || hasPendingPermission {
-                    ProcessingSpinner()
+                    ProcessingSpinner(source: prominentSource)
                         .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
                         .frame(width: viewModel.status == .opened ? 20 : sideWidth)
                         .padding(.trailing, viewModel.status == .opened ? 0 : 4)
@@ -309,7 +340,11 @@ struct NotchView: View {
             // Show static crab only if not showing activity in headerRow
             // (headerRow handles crab + indicator when showClosedActivity is true)
             if !showClosedActivity {
-                ClaudeCrabIcon(size: 14)
+                SessionSourceBrandIcon(
+                    source: prominentSource,
+                    size: 14,
+                    prefersClaudeTheme: hasDetectedClaudeSession
+                )
                     .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: !showClosedActivity)
                     .padding(.leading, 8)
             }
@@ -402,11 +437,15 @@ struct NotchView: View {
         switch newStatus {
         case .opened, .popping:
             isVisible = true
+            if viewModel.openReason != .notification {
+                cancelNotificationAutoClose()
+            }
             // Clear waiting-for-input timestamps only when manually opened (user acknowledged)
             if viewModel.openReason == .click || viewModel.openReason == .hover {
                 waitingForInputTimestamps.removeAll()
             }
         case .closed:
+            cancelNotificationAutoClose()
             // Don't hide on non-notched devices - users need a visible target
             guard viewModel.hasPhysicalNotch else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -435,6 +474,13 @@ struct NotchView: View {
         let waitingForInputSessions = instances.filter { $0.phase == .waitingForInput }
         let currentIds = Set(waitingForInputSessions.map { $0.stableId })
         let newWaitingIds = currentIds.subtracting(previousWaitingForInputIds)
+
+        // Auto-open panel when a task completes and waits for user input
+        if !newWaitingIds.isEmpty &&
+           viewModel.status != .opened {
+            viewModel.notchOpen(reason: .notification)
+            scheduleNotificationAutoClose()
+        }
 
         // Track timestamps for newly waiting sessions
         let now = Date()
@@ -483,6 +529,23 @@ struct NotchView: View {
         }
 
         previousWaitingForInputIds = currentIds
+    }
+
+    private func scheduleNotificationAutoClose() {
+        cancelNotificationAutoClose()
+
+        let workItem = DispatchWorkItem { [self] in
+            guard viewModel.status == .opened,
+                  viewModel.openReason == .notification else { return }
+            viewModel.notchClose()
+        }
+        notificationAutoCloseWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: workItem)
+    }
+
+    private func cancelNotificationAutoClose() {
+        notificationAutoCloseWorkItem?.cancel()
+        notificationAutoCloseWorkItem = nil
     }
 
     /// Determine if notification sound should play for the given sessions

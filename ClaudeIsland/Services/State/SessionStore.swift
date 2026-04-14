@@ -178,6 +178,7 @@ actor SessionStore {
     private func createSession(from event: HookEvent) -> SessionState {
         SessionState(
             sessionId: event.sessionId,
+            source: event.source,
             cwd: event.cwd,
             projectName: URL(fileURLWithPath: event.cwd).lastPathComponent,
             pid: event.pid,
@@ -555,10 +556,7 @@ actor SessionStore {
         guard var session = sessions[payload.sessionId] else { return }
 
         // Update conversationInfo from JSONL (summary, lastMessage, etc.)
-        let conversationInfo = await ConversationParser.shared.parse(
-            sessionId: payload.sessionId,
-            cwd: session.cwd
-        )
+        let conversationInfo = await parseConversationInfo(session: session)
         session.conversationInfo = conversationInfo
 
         // Handle /clear reconciliation - remove items that no longer exist in parser state
@@ -934,19 +932,40 @@ actor SessionStore {
 
     private func loadHistoryFromFile(sessionId: String, cwd: String) async {
         // Parse file asynchronously
-        let messages = await ConversationParser.shared.parseFullConversation(
-            sessionId: sessionId,
-            cwd: cwd
-        )
-        let completedTools = await ConversationParser.shared.completedToolIds(for: sessionId)
-        let toolResults = await ConversationParser.shared.toolResults(for: sessionId)
-        let structuredResults = await ConversationParser.shared.structuredResults(for: sessionId)
+        guard let session = sessions[sessionId] else { return }
 
-        // Also parse conversationInfo (summary, lastMessage, etc.)
-        let conversationInfo = await ConversationParser.shared.parse(
-            sessionId: sessionId,
-            cwd: cwd
-        )
+        let messages: [ChatMessage]
+        let completedTools: Set<String>
+        let toolResults: [String: ConversationParser.ToolResult]
+        let structuredResults: [String: ToolResultData]
+        let conversationInfo: ConversationInfo
+
+        switch session.source {
+        case .claude:
+            messages = await ConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+            completedTools = await ConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await ConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = await ConversationParser.shared.structuredResults(for: sessionId)
+            conversationInfo = await ConversationParser.shared.parse(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+        case .codex:
+            messages = await CodexConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+            completedTools = await CodexConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await CodexConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = [:]
+            conversationInfo = await CodexConversationParser.shared.parse(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+        }
 
         // Process loaded history
         await process(.historyLoaded(
@@ -1010,32 +1029,59 @@ actor SessionStore {
         pendingSyncs[sessionId] = Task { [weak self, syncDebounceNs] in
             try? await Task.sleep(nanoseconds: syncDebounceNs)
             guard !Task.isCancelled else { return }
+            guard let self else { return }
 
             // Parse incrementally - only get NEW messages since last call
-            let result = await ConversationParser.shared.parseIncremental(
-                sessionId: sessionId,
-                cwd: cwd
-            )
+            guard let session = await self.session(for: sessionId) else { return }
 
-            if result.clearDetected {
-                await self?.process(.clearDetected(sessionId: sessionId))
+            let payload: FileUpdatePayload?
+
+            switch session.source {
+            case .claude:
+                let result = await ConversationParser.shared.parseIncremental(
+                    sessionId: sessionId,
+                    cwd: cwd
+                )
+
+                if result.clearDetected {
+                    await self.process(.clearDetected(sessionId: sessionId))
+                }
+
+                guard !result.newMessages.isEmpty || result.clearDetected else {
+                    return
+                }
+
+                payload = FileUpdatePayload(
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    messages: result.newMessages,
+                    isIncremental: !result.clearDetected,
+                    completedToolIds: result.completedToolIds,
+                    toolResults: result.toolResults,
+                    structuredResults: result.structuredResults
+                )
+            case .codex:
+                let result = await CodexConversationParser.shared.parseIncremental(
+                    sessionId: sessionId,
+                    cwd: cwd
+                )
+
+                guard !result.newMessages.isEmpty else { return }
+
+                payload = FileUpdatePayload(
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    messages: result.newMessages,
+                    isIncremental: true,
+                    completedToolIds: result.completedToolIds,
+                    toolResults: result.toolResults,
+                    structuredResults: [:]
+                )
             }
 
-            guard !result.newMessages.isEmpty || result.clearDetected else {
-                return
+            if let payload {
+                await self.process(.fileUpdated(payload))
             }
-
-            let payload = FileUpdatePayload(
-                sessionId: sessionId,
-                cwd: cwd,
-                messages: result.newMessages,
-                isIncremental: !result.clearDetected,
-                completedToolIds: result.completedToolIds,
-                toolResults: result.toolResults,
-                structuredResults: result.structuredResults
-            )
-
-            await self?.process(.fileUpdated(payload))
         }
     }
 
@@ -1139,5 +1185,20 @@ actor SessionStore {
     /// Get all current sessions
     func allSessions() -> [SessionState] {
         Array(sessions.values)
+    }
+
+    private func parseConversationInfo(session: SessionState) async -> ConversationInfo {
+        switch session.source {
+        case .claude:
+            return await ConversationParser.shared.parse(
+                sessionId: session.sessionId,
+                cwd: session.cwd
+            )
+        case .codex:
+            return await CodexConversationParser.shared.parse(
+                sessionId: session.sessionId,
+                cwd: session.cwd
+            )
+        }
     }
 }

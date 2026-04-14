@@ -11,27 +11,43 @@ struct HookInstaller {
 
     /// Install hook script and update settings.json on app launch
     static func installIfNeeded() {
-        let hooksDir = ClaudePaths.hooksDir
-        let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
+        installClaudeHooks()
+        installCodexHooks()
+    }
 
+    private static func installClaudeHooks() {
+        installBundledScript(
+            named: "claude-island-state",
+            into: ClaudePaths.hooksDir.appendingPathComponent("claude-island-state.py")
+        )
+        updateClaudeSettings(at: ClaudePaths.settingsFile)
+    }
+
+    private static func installCodexHooks() {
+        installBundledScript(
+            named: "codex-island-state",
+            into: CodexPaths.hooksDir.appendingPathComponent("codex-island-state.py")
+        )
+        updateCodexHooksFile(at: CodexPaths.hooksFile)
+    }
+
+    private static func installBundledScript(named resource: String, into destination: URL) {
         try? FileManager.default.createDirectory(
-            at: hooksDir,
+            at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
 
-        if let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") {
-            try? FileManager.default.removeItem(at: pythonScript)
-            try? FileManager.default.copyItem(at: bundled, to: pythonScript)
+        if let bundled = Bundle.main.url(forResource: resource, withExtension: "py") {
+            try? FileManager.default.removeItem(at: destination)
+            try? FileManager.default.copyItem(at: bundled, to: destination)
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o755],
-                ofItemAtPath: pythonScript.path
+                ofItemAtPath: destination.path
             )
         }
-
-        updateSettings(at: ClaudePaths.settingsFile)
     }
 
-    private static func updateSettings(at settingsURL: URL) {
+    private static func updateClaudeSettings(at settingsURL: URL) {
         var json: [String: Any] = [:]
         if let data = try? Data(contentsOf: settingsURL),
            let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -94,71 +110,54 @@ struct HookInstaller {
         }
     }
 
-    /// Check if hooks are currently installed
-    static func isInstalled() -> Bool {
-        let settings = ClaudePaths.settingsFile
-
-        guard let data = try? Data(contentsOf: settings),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = json["hooks"] as? [String: Any] else {
-            return false
+    private static func updateCodexHooksFile(at hooksURL: URL) {
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: hooksURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
         }
 
-        for (_, value) in hooks {
-            if let entries = value as? [[String: Any]] {
-                for entry in entries {
-                    if let entryHooks = entry["hooks"] as? [[String: Any]] {
-                        for hook in entryHooks {
-                            if let cmd = hook["command"] as? String,
-                               cmd.contains("claude-island-state.py") {
-                                return true
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return false
-    }
+        let python = detectPython()
+        let command = "\(python) \(CodexPaths.hookScriptShellPath)"
+        let hookEntry: [[String: Any]] = [["type": "command", "command": command, "timeout": 5]]
+        let entry: [[String: Any]] = [["hooks": hookEntry]]
+        let events = ["SessionStart", "UserPromptSubmit", "Stop"]
 
-    /// Uninstall hooks from settings.json and remove script
-    static func uninstall() {
-        let hooksDir = ClaudePaths.hooksDir
-        let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
-        let settings = ClaudePaths.settingsFile
-
-        try? FileManager.default.removeItem(at: pythonScript)
-
-        guard let data = try? Data(contentsOf: settings),
-              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var hooks = json["hooks"] as? [String: Any] else {
-            return
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+        for event in events {
+            let existingEvent = hooks[event] as? [[String: Any]] ?? []
+            let cleanedEvent = existingEvent.compactMap { removingCodexIslandHooks(from: $0) }
+            hooks[event] = cleanedEvent + entry
         }
 
-        for (event, value) in hooks {
-            if var entries = value as? [[String: Any]] {
-                entries = entries.compactMap { removingClaudeIslandHooks(from: $0) }
-
-                if entries.isEmpty {
-                    hooks.removeValue(forKey: event)
-                } else {
-                    hooks[event] = entries
-                }
-            }
-        }
-
-        if hooks.isEmpty {
-            json.removeValue(forKey: "hooks")
-        } else {
-            json["hooks"] = hooks
-        }
+        json["hooks"] = hooks
 
         if let data = try? JSONSerialization.data(
             withJSONObject: json,
             options: [.prettyPrinted, .sortedKeys]
         ) {
-            try? data.write(to: settings)
+            try? data.write(to: hooksURL)
         }
+    }
+
+    /// Check if hooks are currently installed
+    static func isInstalled() -> Bool {
+        isInstalledInJSON(ClaudePaths.settingsFile, matching: "claude-island-state.py") ||
+        isInstalledInJSON(CodexPaths.hooksFile, matching: "codex-island-state.py")
+    }
+
+    /// Uninstall hooks from settings.json and remove script
+    static func uninstall() {
+        uninstallFromJSON(
+            ClaudePaths.settingsFile,
+            scriptURL: ClaudePaths.hooksDir.appendingPathComponent("claude-island-state.py"),
+            remover: removingClaudeIslandHooks
+        )
+        uninstallFromJSON(
+            CodexPaths.hooksFile,
+            scriptURL: CodexPaths.hooksDir.appendingPathComponent("codex-island-state.py"),
+            remover: removingCodexIslandHooks
+        )
     }
 
     private static func detectPython() -> String {
@@ -195,5 +194,84 @@ struct HookInstaller {
     nonisolated private static func isClaudeIslandHook(_ hook: [String: Any]) -> Bool {
         let cmd = hook["command"] as? String ?? ""
         return cmd.contains("claude-island-state.py")
+    }
+
+    nonisolated private static func removingCodexIslandHooks(from entry: [String: Any]) -> [String: Any]? {
+        guard var entryHooks = entry["hooks"] as? [[String: Any]] else {
+            return entry
+        }
+
+        entryHooks.removeAll(where: isCodexIslandHook)
+        guard !entryHooks.isEmpty else { return nil }
+
+        var updatedEntry = entry
+        updatedEntry["hooks"] = entryHooks
+        return updatedEntry
+    }
+
+    nonisolated private static func isCodexIslandHook(_ hook: [String: Any]) -> Bool {
+        let cmd = hook["command"] as? String ?? ""
+        return cmd.contains("codex-island-state.py")
+    }
+
+    private static func isInstalledInJSON(_ url: URL, matching needle: String) -> Bool {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else {
+            return false
+        }
+
+        for (_, value) in hooks {
+            if let entries = value as? [[String: Any]] {
+                for entry in entries {
+                    if let entryHooks = entry["hooks"] as? [[String: Any]] {
+                        for hook in entryHooks {
+                            if let cmd = hook["command"] as? String, cmd.contains(needle) {
+                                return true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    private static func uninstallFromJSON(
+        _ url: URL,
+        scriptURL: URL,
+        remover: ([String: Any]) -> [String: Any]?
+    ) {
+        try? FileManager.default.removeItem(at: scriptURL)
+
+        guard let data = try? Data(contentsOf: url),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hooks = json["hooks"] as? [String: Any] else {
+            return
+        }
+
+        for (event, value) in hooks {
+            if var entries = value as? [[String: Any]] {
+                entries = entries.compactMap(remover)
+                if entries.isEmpty {
+                    hooks.removeValue(forKey: event)
+                } else {
+                    hooks[event] = entries
+                }
+            }
+        }
+
+        if hooks.isEmpty {
+            json.removeValue(forKey: "hooks")
+        } else {
+            json["hooks"] = hooks
+        }
+
+        if let data = try? JSONSerialization.data(
+            withJSONObject: json,
+            options: [.prettyPrinted, .sortedKeys]
+        ) {
+            try? data.write(to: url)
+        }
     }
 }

@@ -196,6 +196,8 @@ struct ChatView: View {
                     .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.85))
                     .lineLimit(1)
 
+                sourceBadge
+
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -221,6 +223,26 @@ struct ChatView: View {
             .allowsHitTesting(false)
         }
         .zIndex(1) // Render above message list
+    }
+
+    private var sourceBadge: some View {
+        HStack(spacing: 4) {
+            if let assetName = session.source.iconAssetName {
+                Image(assetName)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 11, height: 11)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            }
+
+            Text(session.source.shortLabel)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(session.source.accentColor)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(session.source.accentColor.opacity(0.14))
+        .clipShape(Capsule())
     }
 
     /// Whether the session is currently processing
@@ -282,7 +304,7 @@ struct ChatView: View {
 
                     // Processing indicator at bottom (first due to flip)
                     if isProcessing {
-                        ProcessingIndicatorView(turnId: lastUserMessageId)
+                        ProcessingIndicatorView(source: session.source, turnId: lastUserMessageId)
                             .padding(.horizontal, 16)
                             .scaleEffect(x: 1, y: -1)
                             .transition(.asymmetric(
@@ -333,7 +355,7 @@ struct ChatView: View {
             // New messages indicator overlay
             .overlay(alignment: .bottom) {
                 if isAutoscrollPaused && newMessageCount > 0 {
-                    NewMessagesIndicator(count: newMessageCount) {
+                    NewMessagesIndicator(source: session.source, count: newMessageCount) {
                         withAnimation(.easeOut(duration: 0.3)) {
                             // In inverted scroll, use .bottom anchor to scroll to the visual bottom
                             proxy.scrollTo("bottom", anchor: .bottom)
@@ -355,12 +377,22 @@ struct ChatView: View {
 
     /// Can send messages only if session is in tmux
     private var canSendMessages: Bool {
-        session.isInTmux && session.tty != nil
+        session.source.supportsDirectMessaging && session.isInTmux && session.tty != nil
+    }
+
+    private var inputPlaceholder: String {
+        if canSendMessages {
+            return "Message \(session.source.displayName)..."
+        }
+        if session.source.supportsDirectMessaging {
+            return "Open \(session.source.displayName) in tmux to enable messaging"
+        }
+        return "\(session.source.displayName) chat is read-only for now"
     }
 
     private var inputBar: some View {
         HStack(spacing: 10) {
-            TextField(canSendMessages ? "Message Claude..." : "Open Claude Code in tmux to enable messaging", text: $inputText)
+            TextField(inputPlaceholder, text: $inputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundColor(canSendMessages ? .white : .white.opacity(0.4))
@@ -422,6 +454,7 @@ struct ChatView: View {
     /// Bar for interactive tools like AskUserQuestion that need terminal input
     private var interactivePromptBar: some View {
         ChatInteractivePromptBar(
+            sourceName: session.source.displayName,
             isInTmux: session.isInTmux,
             onGoToTerminal: { focusTerminal() }
         )
@@ -446,6 +479,13 @@ struct ChatView: View {
 
     private func focusTerminal() {
         Task {
+            if session.source == .codex {
+                let didOpenCodex = await MainActor.run {
+                    CodexAppLauncher.openOrActivate(projectPath: session.cwd)
+                }
+                if didOpenCodex { return }
+            }
+
             if let pid = session.pid {
                 _ = await YabaiController.shared.focusWindow(forClaudePid: pid)
             } else {
@@ -644,15 +684,16 @@ struct AssistantMessageView: View {
 // MARK: - Processing Indicator
 
 struct ProcessingIndicatorView: View {
+    let source: SessionSource
     private let baseTexts = ["Processing", "Working"]
-    private let color = Color(red: 0.85, green: 0.47, blue: 0.34) // Claude orange
     private let baseText: String
 
     @State private var dotCount: Int = 1
     private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
 
     /// Use a turnId to select text consistently per user turn
-    init(turnId: String = "") {
+    init(source: SessionSource = .claude, turnId: String = "") {
+        self.source = source
         // Use hash of turnId to pick base text consistently for this turn
         let index = abs(turnId.hashValue) % baseTexts.count
         baseText = baseTexts[index]
@@ -664,12 +705,12 @@ struct ProcessingIndicatorView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 6) {
-            ProcessingSpinner()
+            ProcessingSpinner(source: source)
                 .frame(width: 6)
 
             Text(baseText + dots)
                 .font(.system(size: 13))
-                .foregroundColor(color)
+                .foregroundColor(source.accentColor)
 
             Spacer()
         }
@@ -1050,6 +1091,7 @@ struct InterruptedMessageView: View {
 
 /// Bar for interactive tools like AskUserQuestion that need terminal input
 struct ChatInteractivePromptBar: View {
+    let sourceName: String
     let isInTmux: Bool
     let onGoToTerminal: () -> Void
 
@@ -1063,7 +1105,7 @@ struct ChatInteractivePromptBar: View {
                 Text(MCPToolFormatter.formatToolName("AskUserQuestion"))
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundColor(TerminalColors.amber)
-                Text("Claude Code needs your input")
+                Text("\(sourceName) needs your input")
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.5))
                     .lineLimit(1)
@@ -1196,6 +1238,7 @@ struct ChatApprovalBar: View {
 
 /// Floating indicator showing count of new messages when user has scrolled up
 struct NewMessagesIndicator: View {
+    let source: SessionSource
     let count: Int
     let onTap: () -> Void
 
@@ -1215,7 +1258,7 @@ struct NewMessagesIndicator: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(Color(red: 0.85, green: 0.47, blue: 0.34)) // Claude orange
+                    .fill(source.accentColor)
                     .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
             )
             .scaleEffect(isHovering ? 1.05 : 1.0)

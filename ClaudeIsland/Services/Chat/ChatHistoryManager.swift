@@ -42,13 +42,31 @@ class ChatHistoryManager: ObservableObject {
     }
 
     func syncFromFile(sessionId: String, cwd: String) async {
-        let messages = await ConversationParser.shared.parseFullConversation(
-            sessionId: sessionId,
-            cwd: cwd
-        )
-        let completedTools = await ConversationParser.shared.completedToolIds(for: sessionId)
-        let toolResults = await ConversationParser.shared.toolResults(for: sessionId)
-        let structuredResults = await ConversationParser.shared.structuredResults(for: sessionId)
+        guard let session = await SessionStore.shared.session(for: sessionId) else { return }
+
+        let messages: [ChatMessage]
+        let completedTools: Set<String>
+        let toolResults: [String: ConversationParser.ToolResult]
+        let structuredResults: [String: ToolResultData]
+
+        switch session.source {
+        case .claude:
+            messages = await ConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+            completedTools = await ConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await ConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = await ConversationParser.shared.structuredResults(for: sessionId)
+        case .codex:
+            messages = await CodexConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+            completedTools = await CodexConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await CodexConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = [:]
+        }
 
         let payload = FileUpdatePayload(
             sessionId: sessionId,

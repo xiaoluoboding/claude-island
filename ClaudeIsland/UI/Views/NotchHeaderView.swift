@@ -8,6 +8,99 @@
 import Combine
 import SwiftUI
 
+struct SessionSourceBrandIcon: View {
+    let source: SessionSource
+    let size: CGFloat
+    var animate: Bool = false
+    var prefersClaudeTheme: Bool = false
+
+    var body: some View {
+        Group {
+            if prefersClaudeTheme || source == .claude {
+                ClaudeCrabIcon(size: size, color: SessionSource.claude.accentColor, animateLegs: animate)
+            } else {
+                MultiCliPixelIcon(size: size, animate: animate)
+            }
+        }
+    }
+}
+
+struct MultiCliPixelIcon: View {
+    let size: CGFloat
+    var animate: Bool = false
+
+    // Coordinates in an 8x8 grid mapped from the provided 142x142 SVG.
+    private let pixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (2, 0, Color(red: 247 / 255, green: 37 / 255, blue: 133 / 255)),
+        (5, 0, Color(red: 247 / 255, green: 37 / 255, blue: 133 / 255)),
+        (3, 1, Color(red: 171 / 255, green: 21 / 255, blue: 162 / 255)),
+        (4, 1, Color(red: 171 / 255, green: 21 / 255, blue: 162 / 255)),
+        (2, 2, Color(red: 106 / 255, green: 9 / 255, blue: 180 / 255)),
+        (3, 2, Color(red: 106 / 255, green: 9 / 255, blue: 180 / 255)),
+        (4, 2, Color(red: 106 / 255, green: 9 / 255, blue: 180 / 255)),
+        (5, 2, Color(red: 106 / 255, green: 9 / 255, blue: 180 / 255)),
+        (1, 3, Color(red: 74 / 255, green: 11 / 255, blue: 169 / 255)),
+        (2, 3, Color(red: 74 / 255, green: 11 / 255, blue: 169 / 255)),
+        (5, 3, Color(red: 74 / 255, green: 11 / 255, blue: 169 / 255)),
+        (6, 3, Color(red: 74 / 255, green: 11 / 255, blue: 169 / 255)),
+        (0, 4, Color(red: 61 / 255, green: 36 / 255, blue: 184 / 255)),
+        (1, 4, Color(red: 61 / 255, green: 36 / 255, blue: 184 / 255)),
+        (2, 4, Color(red: 61 / 255, green: 36 / 255, blue: 184 / 255)),
+        (3, 4, Color(red: 61 / 255, green: 36 / 255, blue: 184 / 255)),
+        (4, 4, Color(red: 61 / 255, green: 36 / 255, blue: 184 / 255)),
+        (5, 4, Color(red: 61 / 255, green: 36 / 255, blue: 184 / 255)),
+        (6, 4, Color(red: 61 / 255, green: 36 / 255, blue: 184 / 255)),
+        (7, 4, Color(red: 61 / 255, green: 36 / 255, blue: 184 / 255)),
+        (0, 5, Color(red: 66 / 255, green: 85 / 255, blue: 227 / 255)),
+        (2, 5, Color(red: 66 / 255, green: 85 / 255, blue: 227 / 255)),
+        (3, 5, Color(red: 66 / 255, green: 85 / 255, blue: 227 / 255)),
+        (4, 5, Color(red: 66 / 255, green: 85 / 255, blue: 227 / 255)),
+        (5, 5, Color(red: 66 / 255, green: 85 / 255, blue: 227 / 255)),
+        (7, 5, Color(red: 66 / 255, green: 85 / 255, blue: 227 / 255)),
+        (0, 6, Color(red: 71 / 255, green: 142 / 255, blue: 239 / 255)),
+        (2, 6, Color(red: 71 / 255, green: 142 / 255, blue: 239 / 255)),
+        (5, 6, Color(red: 71 / 255, green: 142 / 255, blue: 239 / 255)),
+        (7, 6, Color(red: 71 / 255, green: 142 / 255, blue: 239 / 255)),
+        (3, 7, Color(red: 76 / 255, green: 201 / 255, blue: 240 / 255)),
+        (4, 7, Color(red: 76 / 255, green: 201 / 255, blue: 240 / 255))
+    ]
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+
+            Canvas { context, canvasSize in
+                let gridSize: CGFloat = 8
+                let step = min(canvasSize.width, canvasSize.height) / gridSize
+                let pixelSize = step * 0.88
+                let xOffset = (canvasSize.width - gridSize * step) / 2
+                let yOffset = (canvasSize.height - gridSize * step) / 2
+
+                for pixel in pixels {
+                    let wave = sin((time * 5.2) + Double(pixel.x * 0.9) + Double(pixel.y * 0.75))
+                    let lift = animate ? CGFloat(wave) * step * 0.10 : 0
+                    let opacity = animate ? (0.78 + CGFloat(wave) * 0.22) : 1
+
+                    let rect = CGRect(
+                        x: xOffset + (pixel.x * step) + (step - pixelSize) / 2,
+                        y: yOffset + (pixel.y * step) + (step - pixelSize) / 2 - lift,
+                        width: pixelSize,
+                        height: pixelSize
+                    )
+
+                    context.opacity = opacity
+                    context.fill(
+                        Path(roundedRect: rect, cornerRadius: max(1.5, pixelSize * 0.22)),
+                        with: .color(pixel.color)
+                    )
+                    context.opacity = 1
+                }
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 struct ClaudeCrabIcon: View {
     let size: CGFloat
     let color: Color
@@ -169,4 +262,3 @@ struct ReadyForInputIndicatorIcon: View {
         .frame(width: size, height: size)
     }
 }
-

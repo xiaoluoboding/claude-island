@@ -28,7 +28,7 @@ struct ClaudeInstancesView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.white.opacity(0.4))
 
-            Text("Run claude in terminal")
+            Text("Run Claude or Codex in terminal")
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.25))
         }
@@ -71,6 +71,7 @@ struct ClaudeInstancesView: View {
                 ForEach(sortedInstances) { session in
                     InstanceRow(
                         session: session,
+                        onSelect: { focusSession(session) },
                         onFocus: { focusSession(session) },
                         onChat: { openChat(session) },
                         onArchive: { archiveSession(session) },
@@ -88,12 +89,20 @@ struct ClaudeInstancesView: View {
     // MARK: - Actions
 
     private func focusSession(_ session: SessionState) {
-        guard session.isInTmux else { return }
-
         Task {
+            if session.source == .codex {
+                let didOpenCodex = await MainActor.run {
+                    CodexAppLauncher.openOrActivate(projectPath: session.cwd)
+                }
+                if didOpenCodex { return }
+            }
+
+            var focused = false
             if let pid = session.pid {
-                _ = await YabaiController.shared.focusWindow(forClaudePid: pid)
-            } else {
+                focused = await YabaiController.shared.focusWindow(forClaudePid: pid)
+            }
+
+            if !focused {
                 _ = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
             }
         }
@@ -120,6 +129,7 @@ struct ClaudeInstancesView: View {
 
 struct InstanceRow: View {
     let session: SessionState
+    let onSelect: () -> Void
     let onFocus: () -> Void
     let onChat: () -> Void
     let onArchive: () -> Void
@@ -130,7 +140,6 @@ struct InstanceRow: View {
     @State private var spinnerPhase = 0
     @State private var isYabaiAvailable = false
 
-    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
     private let spinnerSymbols = ["·", "✢", "✳", "∗", "✻", "✽"]
     private let spinnerTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
@@ -176,6 +185,8 @@ struct InstanceRow: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white)
                         .lineLimit(1)
+
+                    sourceBadge
 
                     // Token usage indicator
                     if session.usage.totalTokens > 0 {
@@ -319,6 +330,9 @@ struct InstanceRow: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(isHovered ? Color.white.opacity(0.06) : Color.clear)
         )
+        .onTapGesture {
+            onSelect()
+        }
         .onHover { isHovered = $0 }
         .task {
             isYabaiAvailable = await WindowFinder.shared.isYabaiAvailable()
@@ -331,7 +345,7 @@ struct InstanceRow: View {
         case .processing, .compacting:
             Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(claudeOrange)
+                .foregroundColor(session.source.accentColor)
                 .onReceive(spinnerTimer) { _ in
                     spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
                 }
@@ -351,6 +365,26 @@ struct InstanceRow: View {
                 .fill(Color.white.opacity(0.2))
                 .frame(width: 6, height: 6)
         }
+    }
+
+    private var sourceBadge: some View {
+        HStack(spacing: 4) {
+            if let assetName = session.source.iconAssetName {
+                Image(assetName)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 11, height: 11)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            }
+
+            Text(session.source.shortLabel)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(session.source.accentColor)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(session.source.accentColor.opacity(0.14))
+        .clipShape(Capsule())
     }
 
 }
