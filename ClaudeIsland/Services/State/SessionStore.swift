@@ -123,6 +123,16 @@ actor SessionStore {
 
     private func processHookEvent(_ event: HookEvent) async {
         let sessionId = event.sessionId
+
+        // Codex can emit SessionStart/Stop even when no actual prompt turn has run.
+        // Ignore those startup/teardown-only signals for unknown sessions to avoid
+        // showing phantom "Ready" projects.
+        if event.source == .codex,
+           sessions[sessionId] == nil,
+           event.event == "SessionStart" || event.event == "Stop" {
+            return
+        }
+
         let isNewSession = sessions[sessionId] == nil
         var session = sessions[sessionId] ?? createSession(from: event)
 

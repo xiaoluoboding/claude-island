@@ -121,13 +121,25 @@ struct HookInstaller {
         let command = "\(python) \(CodexPaths.hookScriptShellPath)"
         let hookEntry: [[String: Any]] = [["type": "command", "command": command, "timeout": 5]]
         let entry: [[String: Any]] = [["hooks": hookEntry]]
-        let events = ["SessionStart", "UserPromptSubmit", "Stop"]
+        let events = ["UserPromptSubmit", "Stop"]
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
+
+        // First remove all existing codex-island hooks from every event.
+        // This lets us clean up stale SessionStart hooks from older versions.
+        for (event, value) in hooks {
+            guard let existingEvent = value as? [[String: Any]] else { continue }
+            let cleanedEvent = existingEvent.compactMap { removingCodexIslandHooks(from: $0) }
+            if cleanedEvent.isEmpty {
+                hooks.removeValue(forKey: event)
+            } else {
+                hooks[event] = cleanedEvent
+            }
+        }
+
         for event in events {
             let existingEvent = hooks[event] as? [[String: Any]] ?? []
-            let cleanedEvent = existingEvent.compactMap { removingCodexIslandHooks(from: $0) }
-            hooks[event] = cleanedEvent + entry
+            hooks[event] = existingEvent + entry
         }
 
         json["hooks"] = hooks
