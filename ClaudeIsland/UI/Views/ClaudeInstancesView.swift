@@ -28,7 +28,7 @@ struct ClaudeInstancesView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.white.opacity(0.4))
 
-            Text("Run Claude or Codex in terminal")
+            Text("Run Claude, Codex, or Copilot in terminal")
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.25))
         }
@@ -369,12 +369,18 @@ struct InstanceRow: View {
 
     private var sourceBadge: some View {
         HStack(spacing: 4) {
-            if let assetName = session.source.iconAssetName {
+            if session.source == .copilot {
+                CopilotPixelBadgeIcon(size: 11)
+            } else if let assetName = session.source.iconAssetName {
                 Image(assetName)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: 11, height: 11)
                     .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            } else if let symbol = session.source.symbolName {
+                Image(systemName: symbol)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(session.source.accentColor.opacity(0.95))
             }
 
             Text(session.source.shortLabel)
@@ -383,7 +389,11 @@ struct InstanceRow: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(session.source.accentColor.opacity(0.14))
+        .background(session.source.badgeGradient)
+        .overlay(
+            Capsule()
+                .stroke(session.source.badgeBorderColor, lineWidth: 0.6)
+        )
         .clipShape(Capsule())
     }
 

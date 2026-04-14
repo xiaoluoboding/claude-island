@@ -427,3 +427,321 @@ actor CodexConversationParser {
         ]
     }
 }
+
+actor CopilotConversationParser {
+    static let shared = CopilotConversationParser()
+
+    struct IncrementalParseResult {
+        let newMessages: [ChatMessage]
+        let allMessages: [ChatMessage]
+        let completedToolIds: Set<String>
+        let toolResults: [String: ConversationParser.ToolResult]
+    }
+
+    private struct IncrementalParseState {
+        var lastFileOffset: UInt64 = 0
+        var messages: [ChatMessage] = []
+        var seenMessageIds: Set<String> = []
+        var seenToolIds: Set<String> = []
+        var completedToolIds: Set<String> = []
+        var toolResults: [String: ConversationParser.ToolResult] = [:]
+    }
+
+    private var incrementalState: [String: IncrementalParseState] = [:]
+
+    func parse(sessionId: String, cwd: String) -> ConversationInfo {
+        let messages = parseFullConversation(sessionId: sessionId, cwd: cwd)
+        let meaningfulUserMessages = messages.compactMap { message -> (ChatMessage, String)? in
+            guard message.role == .user,
+                  let prompt = meaningfulUserPrompt(from: message.textContent) else {
+                return nil
+            }
+            return (message, prompt)
+        }
+
+        let firstUser = meaningfulUserMessages.first?.1
+        let lastNonEmpty = messages.last(where: { !$0.textContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        let lastUser = meaningfulUserMessages.last?.0
+
+        return ConversationInfo(
+            summary: truncate(firstUser, maxLength: 50) ?? "Copilot Session",
+            lastMessage: truncate(lastNonEmpty?.textContent, maxLength: 80),
+            lastMessageRole: lastNonEmpty?.role.rawValue,
+            lastToolName: nil,
+            firstUserMessage: truncate(firstUser, maxLength: 50),
+            lastUserMessageDate: lastUser?.timestamp
+        )
+    }
+
+    func parseFullConversation(sessionId: String, cwd: String) -> [ChatMessage] {
+        guard let filePath = sessionFilePath(sessionId: sessionId),
+              let content = try? String(contentsOfFile: filePath, encoding: .utf8) else {
+            return []
+        }
+        return parseContent(content)
+    }
+
+    func parseIncremental(sessionId: String, cwd: String) -> IncrementalParseResult {
+        guard let filePath = sessionFilePath(sessionId: sessionId),
+              let fileHandle = FileHandle(forReadingAtPath: filePath) else {
+            return IncrementalParseResult(
+                newMessages: [],
+                allMessages: [],
+                completedToolIds: [],
+                toolResults: [:]
+            )
+        }
+        defer { try? fileHandle.close() }
+
+        var state = incrementalState[sessionId] ?? IncrementalParseState()
+
+        let fileSize: UInt64
+        do {
+            fileSize = try fileHandle.seekToEnd()
+        } catch {
+            return IncrementalParseResult(
+                newMessages: [],
+                allMessages: state.messages,
+                completedToolIds: state.completedToolIds,
+                toolResults: state.toolResults
+            )
+        }
+
+        if fileSize < state.lastFileOffset {
+            state = IncrementalParseState()
+        }
+
+        if fileSize == state.lastFileOffset {
+            incrementalState[sessionId] = state
+            return IncrementalParseResult(
+                newMessages: [],
+                allMessages: state.messages,
+                completedToolIds: state.completedToolIds,
+                toolResults: state.toolResults
+            )
+        }
+
+        do {
+            try fileHandle.seek(toOffset: state.lastFileOffset)
+        } catch {
+            incrementalState[sessionId] = state
+            return IncrementalParseResult(
+                newMessages: [],
+                allMessages: state.messages,
+                completedToolIds: state.completedToolIds,
+                toolResults: state.toolResults
+            )
+        }
+
+        guard let newData = try? fileHandle.readToEnd(),
+              let newContent = String(data: newData, encoding: .utf8) else {
+            incrementalState[sessionId] = state
+            return IncrementalParseResult(
+                newMessages: [],
+                allMessages: state.messages,
+                completedToolIds: state.completedToolIds,
+                toolResults: state.toolResults
+            )
+        }
+
+        var newMessages: [ChatMessage] = []
+        for line in newContent.components(separatedBy: "\n") where !line.isEmpty {
+            guard let lineData = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                continue
+            }
+
+            if let toolId = parseToolOutput(json, state: &state) {
+                state.completedToolIds.insert(toolId)
+                continue
+            }
+
+            if let message = parseMessageLine(json, state: &state) {
+                newMessages.append(message)
+                state.messages.append(message)
+            }
+        }
+
+        state.lastFileOffset = fileSize
+        incrementalState[sessionId] = state
+
+        return IncrementalParseResult(
+            newMessages: newMessages,
+            allMessages: state.messages,
+            completedToolIds: state.completedToolIds,
+            toolResults: state.toolResults
+        )
+    }
+
+    func completedToolIds(for sessionId: String) -> Set<String> {
+        incrementalState[sessionId]?.completedToolIds ?? []
+    }
+
+    func toolResults(for sessionId: String) -> [String: ConversationParser.ToolResult] {
+        incrementalState[sessionId]?.toolResults ?? [:]
+    }
+
+    func resetState(for sessionId: String) {
+        incrementalState.removeValue(forKey: sessionId)
+    }
+
+    private func parseContent(_ content: String) -> [ChatMessage] {
+        var state = IncrementalParseState()
+        var messages: [ChatMessage] = []
+
+        for line in content.components(separatedBy: "\n") where !line.isEmpty {
+            guard let lineData = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                continue
+            }
+
+            _ = parseToolOutput(json, state: &state)
+            if let message = parseMessageLine(json, state: &state) {
+                messages.append(message)
+            }
+        }
+
+        return messages
+    }
+
+    private func parseMessageLine(_ json: [String: Any], state: inout IncrementalParseState) -> ChatMessage? {
+        guard let type = json["type"] as? String else { return nil }
+        let timestamp = parseTimestamp(json["timestamp"] as? String) ?? Date()
+
+        switch type {
+        case "user.message":
+            guard let data = json["data"] as? [String: Any],
+                  let text = data["content"] as? String else { return nil }
+
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+
+            let id = "copilot-user-\(StableHash.hash("\(timestamp.timeIntervalSince1970)-\(trimmed)".prefix(200)))"
+            guard state.seenMessageIds.insert(id).inserted else { return nil }
+
+            return ChatMessage(
+                id: id,
+                role: .user,
+                timestamp: timestamp,
+                content: [.text(trimmed)]
+            )
+
+        case "assistant.message":
+            guard let data = json["data"] as? [String: Any] else { return nil }
+
+            var blocks: [MessageBlock] = []
+
+            if let text = data["content"] as? String {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    blocks.append(.text(trimmed))
+                }
+            }
+
+            if let toolRequests = data["toolRequests"] as? [[String: Any]] {
+                for request in toolRequests {
+                    guard let callId = request["toolCallId"] as? String,
+                          let name = request["name"] as? String else { continue }
+                    let input = parseToolArguments(request["arguments"])
+                    if state.seenToolIds.insert(callId).inserted {
+                        blocks.append(.toolUse(ToolUseBlock(id: callId, name: name, input: input)))
+                    }
+                }
+            }
+
+            guard !blocks.isEmpty else { return nil }
+
+            let rawId = (data["messageId"] as? String) ?? "\(timestamp.timeIntervalSince1970)"
+            let id = "copilot-assistant-\(StableHash.hash(rawId.prefix(200)))"
+            guard state.seenMessageIds.insert(id).inserted else { return nil }
+
+            return ChatMessage(
+                id: id,
+                role: .assistant,
+                timestamp: timestamp,
+                content: blocks
+            )
+
+        default:
+            return nil
+        }
+    }
+
+    private func parseToolOutput(_ json: [String: Any], state: inout IncrementalParseState) -> String? {
+        guard json["type"] as? String == "tool.execution_complete",
+              let data = json["data"] as? [String: Any],
+              let callId = data["toolCallId"] as? String else {
+            return nil
+        }
+
+        let success = data["success"] as? Bool ?? true
+        let resultData = data["result"] as? [String: Any]
+        let content = (resultData?["content"] as? String) ?? (resultData?["detailedContent"] as? String)
+
+        state.toolResults[callId] = ConversationParser.ToolResult(
+            content: content,
+            stdout: nil,
+            stderr: nil,
+            isError: !success
+        )
+        return callId
+    }
+
+    private func parseToolArguments(_ value: Any?) -> [String: String] {
+        guard let dict = value as? [String: Any] else { return [:] }
+        var result: [String: String] = [:]
+
+        for (key, value) in dict {
+            switch value {
+            case let string as String:
+                result[key] = string
+            case let int as Int:
+                result[key] = String(int)
+            case let bool as Bool:
+                result[key] = bool ? "true" : "false"
+            default:
+                if let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+                   let string = String(data: data, encoding: .utf8) {
+                    result[key] = string
+                }
+            }
+        }
+
+        return result
+    }
+
+    private func parseTimestamp(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value)
+    }
+
+    private func truncate(_ message: String?, maxLength: Int) -> String? {
+        guard let message else { return nil }
+        let cleaned = message.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
+        if cleaned.count > maxLength {
+            return String(cleaned.prefix(maxLength - 3)) + "..."
+        }
+        return cleaned
+    }
+
+    private func meaningfulUserPrompt(from rawText: String) -> String? {
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if trimmed.hasPrefix("<current_datetime>") || trimmed.hasPrefix("<reminder>") {
+            return nil
+        }
+
+        return trimmed
+    }
+
+    private func sessionFilePath(sessionId: String) -> String? {
+        let path = CopilotPaths.sessionStateDir
+            .appendingPathComponent(sessionId)
+            .appendingPathComponent("events.jsonl")
+            .path
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+}

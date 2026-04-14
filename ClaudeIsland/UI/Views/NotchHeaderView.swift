@@ -18,10 +18,81 @@ struct SessionSourceBrandIcon: View {
         Group {
             if prefersClaudeTheme || source == .claude {
                 ClaudeCrabIcon(size: size, color: SessionSource.claude.accentColor, animateLegs: animate)
+            } else if source == .copilot {
+                CopilotPixelFaceIcon(size: size, animate: true)
             } else {
                 MultiCliPixelIcon(size: size, animate: animate)
             }
         }
+    }
+}
+
+struct CopilotPixelFaceIcon: View {
+    let size: CGFloat
+    var animate: Bool = false
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            let phase = t.truncatingRemainder(dividingBy: 3.0)
+            let isBlinking = animate && phase < 0.22
+
+            Canvas { context, canvasSize in
+                let grid: CGFloat = 16
+                let step = min(canvasSize.width, canvasSize.height) / grid
+                let pixelSize = step * 0.94
+                let xOffset = (canvasSize.width - grid * step) / 2
+                let yOffset = (canvasSize.height - grid * step) / 2
+
+                func draw(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat = 1, _ h: CGFloat = 1, _ color: Color) {
+                    let rect = CGRect(
+                        x: xOffset + x * step + (step - pixelSize) / 2,
+                        y: yOffset + y * step + (step - pixelSize) / 2,
+                        width: pixelSize * w,
+                        height: pixelSize * h
+                    )
+                    context.fill(Path(rect), with: .color(color))
+                }
+
+                let outline = Color(red: 0.75, green: 0.84, blue: 0.98)
+                let mouth = SessionSource.copilot.accentColor
+                let teeth = Color(red: 0.67, green: 0.95, blue: 0.45)
+
+                // Eye outlines (left + right)
+                if isBlinking {
+                    draw(3, 4, 3, 1, outline)
+                    draw(10, 4, 3, 1, outline)
+                } else {
+                    draw(3, 2, 3, 1, outline)
+                    draw(3, 5, 3, 1, outline)
+                    draw(3, 2, 1, 4, outline)
+                    draw(5, 2, 1, 4, outline)
+
+                    draw(10, 2, 3, 1, outline)
+                    draw(10, 5, 3, 1, outline)
+                    draw(10, 2, 1, 4, outline)
+                    draw(12, 2, 1, 4, outline)
+                }
+
+                // Mouth + cheeks
+                draw(2, 8, 1, 4, mouth)
+                draw(13, 8, 1, 4, mouth)
+                draw(4, 11, 9, 1, mouth)
+
+                // Teeth
+                draw(6, 8, 1, 2, teeth)
+                draw(9, 8, 1, 2, teeth)
+            }
+            .frame(width: size, height: size)
+        }
+    }
+}
+
+struct CopilotPixelBadgeIcon: View {
+    let size: CGFloat
+
+    var body: some View {
+        CopilotPixelFaceIcon(size: size, animate: true)
     }
 }
 

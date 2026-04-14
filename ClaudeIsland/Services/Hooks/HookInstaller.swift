@@ -13,6 +13,7 @@ struct HookInstaller {
     static func installIfNeeded() {
         installClaudeHooks()
         installCodexHooks()
+        installCopilotHooks()
     }
 
     private static func installClaudeHooks() {
@@ -29,6 +30,14 @@ struct HookInstaller {
             into: CodexPaths.hooksDir.appendingPathComponent("codex-island-state.py")
         )
         updateCodexHooksFile(at: CodexPaths.hooksFile)
+    }
+
+    private static func installCopilotHooks() {
+        installBundledScript(
+            named: "codex-island-state",
+            into: CopilotPaths.hooksDir.appendingPathComponent("copilot-island-state.py")
+        )
+        updateCopilotConfigFile(at: CopilotPaths.configFile)
     }
 
     private static func installBundledScript(named resource: String, into destination: URL) {
@@ -152,10 +161,65 @@ struct HookInstaller {
         }
     }
 
+    private static func updateCopilotConfigFile(at configURL: URL) {
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        let python = detectPython()
+        let hookEvents = [
+            "sessionStart",
+            "sessionEnd",
+            "userPromptSubmitted",
+            "preToolUse",
+            "postToolUse",
+            "postToolUseFailure",
+            "errorOccurred",
+            "agentStop"
+        ]
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+
+        for (event, value) in hooks {
+            guard var entries = value as? [[String: Any]] else { continue }
+            entries.removeAll(where: isCopilotIslandHook)
+            if entries.isEmpty {
+                hooks.removeValue(forKey: event)
+            } else {
+                hooks[event] = entries
+            }
+        }
+
+        for event in hookEvents {
+            let command = "\(python) \(CopilotPaths.hookScriptShellPath) --source copilot --event \(event)"
+            let entry: [String: Any] = [
+                "type": "command",
+                "timeoutSec": 10,
+                "bash": command,
+                "powershell": command
+            ]
+            var entries = hooks[event] as? [[String: Any]] ?? []
+            entries.append(entry)
+            hooks[event] = entries
+        }
+
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(
+            withJSONObject: json,
+            options: [.prettyPrinted, .sortedKeys]
+        ) {
+            try? data.write(to: configURL)
+        }
+    }
+
     /// Check if hooks are currently installed
     static func isInstalled() -> Bool {
         isInstalledInJSON(ClaudePaths.settingsFile, matching: "claude-island-state.py") ||
-        isInstalledInJSON(CodexPaths.hooksFile, matching: "codex-island-state.py")
+        isInstalledInJSON(CodexPaths.hooksFile, matching: "codex-island-state.py") ||
+        isInstalledInJSON(CopilotPaths.configFile, matching: "copilot-island-state.py")
     }
 
     /// Uninstall hooks from settings.json and remove script
@@ -169,6 +233,11 @@ struct HookInstaller {
             CodexPaths.hooksFile,
             scriptURL: CodexPaths.hooksDir.appendingPathComponent("codex-island-state.py"),
             remover: removingCodexIslandHooks
+        )
+        uninstallFromJSON(
+            CopilotPaths.configFile,
+            scriptURL: CopilotPaths.hooksDir.appendingPathComponent("copilot-island-state.py"),
+            remover: removingCopilotIslandHooks
         )
     }
 
@@ -226,6 +295,26 @@ struct HookInstaller {
         return cmd.contains("codex-island-state.py")
     }
 
+    nonisolated private static func removingCopilotIslandHooks(from entry: [String: Any]) -> [String: Any]? {
+        if var entryHooks = entry["hooks"] as? [[String: Any]] {
+            entryHooks.removeAll(where: isCopilotIslandHook)
+            guard !entryHooks.isEmpty else { return nil }
+            var updatedEntry = entry
+            updatedEntry["hooks"] = entryHooks
+            return updatedEntry
+        }
+
+        if isCopilotIslandHook(entry) {
+            return nil
+        }
+        return entry
+    }
+
+    nonisolated private static func isCopilotIslandHook(_ hook: [String: Any]) -> Bool {
+        let command = (hook["command"] as? String) ?? (hook["bash"] as? String) ?? ""
+        return command.contains("copilot-island-state.py")
+    }
+
     private static func isInstalledInJSON(_ url: URL, matching needle: String) -> Bool {
         guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -242,6 +331,12 @@ struct HookInstaller {
                                 return true
                             }
                         }
+                    }
+                    if let command = entry["command"] as? String, command.contains(needle) {
+                        return true
+                    }
+                    if let bash = entry["bash"] as? String, bash.contains(needle) {
+                        return true
                     }
                 }
             }

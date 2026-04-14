@@ -123,13 +123,14 @@ actor SessionStore {
 
     private func processHookEvent(_ event: HookEvent) async {
         let sessionId = event.sessionId
+        let eventName = event.canonicalEvent
 
         // Codex can emit SessionStart/Stop even when no actual prompt turn has run.
         // Ignore those startup/teardown-only signals for unknown sessions to avoid
         // showing phantom "Ready" projects.
-        if event.source == .codex,
+        if (event.source == .codex || event.source == .copilot),
            sessions[sessionId] == nil,
-           event.event == "SessionStart" || event.event == "Stop" {
+           eventName == "SessionStart" || eventName == "Stop" {
             return
         }
 
@@ -165,7 +166,7 @@ actor SessionStore {
             Self.logger.debug("Invalid transition: \(String(describing: session.phase), privacy: .public) -> \(String(describing: newPhase), privacy: .public), ignoring")
         }
 
-        if event.event == "PermissionRequest", let toolUseId = event.toolUseId {
+        if eventName == "PermissionRequest", let toolUseId = event.toolUseId {
             Self.logger.debug("Setting tool \(toolUseId.prefix(12), privacy: .public) status to waitingForApproval")
             updateToolStatus(in: &session, toolId: toolUseId, status: .waitingForApproval)
         }
@@ -173,7 +174,7 @@ actor SessionStore {
         processToolTracking(event: event, session: &session)
         processSubagentTracking(event: event, session: &session)
 
-        if event.event == "Stop" {
+        if eventName == "Stop" {
             session.subagentState = SubagentState()
         }
 
@@ -199,7 +200,7 @@ actor SessionStore {
     }
 
     private func processToolTracking(event: HookEvent, session: inout SessionState) {
-        switch event.event {
+        switch event.canonicalEvent {
         case "PreToolUse":
             if let toolUseId = event.toolUseId, let toolName = event.tool {
                 session.toolTracker.startTool(id: toolUseId, name: toolName)
@@ -269,7 +270,7 @@ actor SessionStore {
     }
 
     private func processSubagentTracking(event: HookEvent, session: inout SessionState) {
-        switch event.event {
+        switch event.canonicalEvent {
         case "PreToolUse":
             if ToolCallItem.isSubagentContainerName(event.tool), let toolUseId = event.toolUseId {
                 let description = event.toolInput?["description"]?.value as? String
@@ -975,6 +976,18 @@ actor SessionStore {
                 sessionId: sessionId,
                 cwd: cwd
             )
+        case .copilot:
+            messages = await CopilotConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+            completedTools = await CopilotConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await CopilotConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = [:]
+            conversationInfo = await CopilotConversationParser.shared.parse(
+                sessionId: sessionId,
+                cwd: cwd
+            )
         }
 
         // Process loaded history
@@ -1072,6 +1085,23 @@ actor SessionStore {
                 )
             case .codex:
                 let result = await CodexConversationParser.shared.parseIncremental(
+                    sessionId: sessionId,
+                    cwd: cwd
+                )
+
+                guard !result.newMessages.isEmpty else { return }
+
+                payload = FileUpdatePayload(
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    messages: result.newMessages,
+                    isIncremental: true,
+                    completedToolIds: result.completedToolIds,
+                    toolResults: result.toolResults,
+                    structuredResults: [:]
+                )
+            case .copilot:
+                let result = await CopilotConversationParser.shared.parseIncremental(
                     sessionId: sessionId,
                     cwd: cwd
                 )
@@ -1206,6 +1236,11 @@ actor SessionStore {
             )
         case .codex:
             return await CodexConversationParser.shared.parse(
+                sessionId: session.sessionId,
+                cwd: session.cwd
+            )
+        case .copilot:
+            return await CopilotConversationParser.shared.parse(
                 sessionId: session.sessionId,
                 cwd: session.cwd
             )

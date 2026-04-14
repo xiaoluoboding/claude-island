@@ -66,6 +66,14 @@ class ChatHistoryManager: ObservableObject {
             completedTools = await CodexConversationParser.shared.completedToolIds(for: sessionId)
             toolResults = await CodexConversationParser.shared.toolResults(for: sessionId)
             structuredResults = [:]
+        case .copilot:
+            messages = await CopilotConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+            completedTools = await CopilotConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await CopilotConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = [:]
         }
 
         let payload = FileUpdatePayload(

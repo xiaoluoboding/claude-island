@@ -57,11 +57,11 @@ class ClaudeSessionMonitor: ObservableObject {
                     }
                 }
 
-                if event.event == "Stop" {
+                if event.canonicalEvent == "Stop" {
                     HookSocketServer.shared.cancelPendingPermissions(sessionId: event.sessionId)
                 }
 
-                if event.event == "PostToolUse", let toolUseId = event.toolUseId {
+                if event.canonicalEvent == "PostToolUse", let toolUseId = event.toolUseId {
                     HookSocketServer.shared.cancelPendingPermission(toolUseId: toolUseId)
                 }
             },

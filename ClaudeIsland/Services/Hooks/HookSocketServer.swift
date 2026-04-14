@@ -432,11 +432,11 @@ class HookSocketServer {
 
         logger.debug("Received: \(event.event, privacy: .public) for \(event.sessionId.prefix(8), privacy: .public)")
 
-        if event.event == "PreToolUse" {
+        if event.canonicalEvent == "PreToolUse" {
             cacheToolUseId(event: event)
         }
 
-        if event.event == "SessionEnd" {
+        if event.canonicalEvent == "SessionEnd" {
             cleanupCache(sessionId: event.sessionId)
         }
 

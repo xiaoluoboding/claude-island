@@ -127,8 +127,26 @@ struct ToolCompletionResult: Sendable {
 // MARK: - Hook Event Extensions
 
 extension HookEvent {
+    /// Normalize provider-specific hook names to Claude-style canonical names.
+    /// This keeps state handling consistent across Claude/Codex/Copilot.
+    nonisolated var canonicalEvent: String {
+        switch event {
+        case "sessionStart": return "SessionStart"
+        case "sessionEnd": return "SessionEnd"
+        case "userPromptSubmitted": return "UserPromptSubmit"
+        case "preToolUse": return "PreToolUse"
+        case "postToolUse": return "PostToolUse"
+        case "postToolUseFailure": return "PostToolUseFailure"
+        case "agentStop": return "Stop"
+        case "errorOccurred": return "StopFailure"
+        default: return event
+        }
+    }
+
     /// Determine the target session phase based on this hook event
     nonisolated func determinePhase() -> SessionPhase {
+        let event = canonicalEvent
+
         // PreCompact takes priority
         if event == "PreCompact" {
             return .compacting
@@ -164,12 +182,13 @@ extension HookEvent {
 
     /// Whether this is a tool-related event
     nonisolated var isToolEvent: Bool {
-        event == "PreToolUse" || event == "PostToolUse" || event == "PermissionRequest"
+        let event = canonicalEvent
+        return event == "PreToolUse" || event == "PostToolUse" || event == "PermissionRequest"
     }
 
     /// Whether this event should trigger a file sync
     nonisolated var shouldSyncFile: Bool {
-        switch event {
+        switch canonicalEvent {
         case "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop":
             return true
         default:
