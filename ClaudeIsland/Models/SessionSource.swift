@@ -11,12 +11,14 @@ enum SessionSource: String, Codable, Equatable, Sendable, CaseIterable {
     case claude
     case codex
     case copilot
+    case opencode
 
     var displayName: String {
         switch self {
         case .claude: return "Claude"
         case .codex: return "Codex"
         case .copilot: return "Copilot"
+        case .opencode: return "OpenCode"
         }
     }
 
@@ -25,6 +27,7 @@ enum SessionSource: String, Codable, Equatable, Sendable, CaseIterable {
         case .claude: return "Claude"
         case .codex: return "Codex"
         case .copilot: return "Copilot"
+        case .opencode: return "OC"
         }
     }
 
@@ -36,6 +39,8 @@ enum SessionSource: String, Codable, Equatable, Sendable, CaseIterable {
             return Color(red: 76 / 255, green: 90 / 255, blue: 247 / 255)
         case .copilot:
             return Color(red: 240 / 255, green: 149 / 255, blue: 247 / 255)
+        case .opencode:
+            return Color(red: 56 / 255, green: 189 / 255, blue: 148 / 255)
         }
     }
 
@@ -47,6 +52,8 @@ enum SessionSource: String, Codable, Equatable, Sendable, CaseIterable {
             return Color(red: 99 / 255, green: 102 / 255, blue: 241 / 255)
         case .copilot:
             return Color(red: 170 / 255, green: 86 / 255, blue: 177 / 255)
+        case .opencode:
+            return Color(red: 34 / 255, green: 150 / 255, blue: 118 / 255)
         }
     }
 
@@ -70,6 +77,8 @@ enum SessionSource: String, Codable, Equatable, Sendable, CaseIterable {
             return "CodexSourceIcon"
         case .copilot:
             return nil
+        case .opencode:
+            return nil
         }
     }
 
@@ -86,5 +95,9 @@ enum SessionSource: String, Codable, Equatable, Sendable, CaseIterable {
 
     var supportsDirectMessaging: Bool {
         self == .claude
+    }
+
+    var supportsSessionFocus: Bool {
+        self != .opencode
     }
 }

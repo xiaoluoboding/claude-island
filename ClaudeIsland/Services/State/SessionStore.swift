@@ -128,7 +128,7 @@ actor SessionStore {
         // Codex can emit SessionStart/Stop even when no actual prompt turn has run.
         // Ignore those startup/teardown-only signals for unknown sessions to avoid
         // showing phantom "Ready" projects.
-        if (event.source == .codex || event.source == .copilot),
+        if (event.source == .codex || event.source == .copilot || event.source == .opencode),
            sessions[sessionId] == nil,
            eventName == "SessionStart" || eventName == "Stop" {
             return
@@ -988,6 +988,18 @@ actor SessionStore {
                 sessionId: sessionId,
                 cwd: cwd
             )
+        case .opencode:
+            messages = await OpenCodeConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+            completedTools = await OpenCodeConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await OpenCodeConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = [:]
+            conversationInfo = await OpenCodeConversationParser.shared.parse(
+                sessionId: sessionId,
+                cwd: cwd
+            )
         }
 
         // Process loaded history
@@ -1102,6 +1114,23 @@ actor SessionStore {
                 )
             case .copilot:
                 let result = await CopilotConversationParser.shared.parseIncremental(
+                    sessionId: sessionId,
+                    cwd: cwd
+                )
+
+                guard !result.newMessages.isEmpty else { return }
+
+                payload = FileUpdatePayload(
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    messages: result.newMessages,
+                    isIncremental: true,
+                    completedToolIds: result.completedToolIds,
+                    toolResults: result.toolResults,
+                    structuredResults: [:]
+                )
+            case .opencode:
+                let result = await OpenCodeConversationParser.shared.parseIncremental(
                     sessionId: sessionId,
                     cwd: cwd
                 )
@@ -1241,6 +1270,11 @@ actor SessionStore {
             )
         case .copilot:
             return await CopilotConversationParser.shared.parse(
+                sessionId: session.sessionId,
+                cwd: session.cwd
+            )
+        case .opencode:
+            return await OpenCodeConversationParser.shared.parse(
                 sessionId: session.sessionId,
                 cwd: session.cwd
             )

@@ -14,6 +14,7 @@ struct HookInstaller {
         installClaudeHooks()
         installCodexHooks()
         installCopilotHooks()
+        installOpenCodeHooks()
     }
 
     private static func installClaudeHooks() {
@@ -38,6 +39,14 @@ struct HookInstaller {
             into: CopilotPaths.hooksDir.appendingPathComponent("copilot-island-state.py")
         )
         updateCopilotConfigFile(at: CopilotPaths.configFile)
+    }
+
+    private static func installOpenCodeHooks() {
+        installBundledScript(
+            named: "opencode-island-state",
+            into: OpenCodePaths.hooksDir.appendingPathComponent("opencode-island-state.py")
+        )
+        updateOpenCodeHooksFile(at: OpenCodePaths.hooksFile)
     }
 
     private static func installBundledScript(named resource: String, into destination: URL) {
@@ -215,11 +224,52 @@ struct HookInstaller {
         }
     }
 
+    private static func updateOpenCodeHooksFile(at hooksURL: URL) {
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: hooksURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        let python = detectPython()
+        let command = "\(python) \(OpenCodePaths.hookScriptShellPath) --source opencode"
+        let hookEntry: [[String: Any]] = [["type": "command", "command": command, "timeout": 5]]
+        let entry: [[String: Any]] = [["hooks": hookEntry]]
+        let events = ["UserPromptSubmit", "Stop"]
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+
+        for (event, value) in hooks {
+            guard let existingEvent = value as? [[String: Any]] else { continue }
+            let cleanedEvent = existingEvent.compactMap { removingOpenCodeIslandHooks(from: $0) }
+            if cleanedEvent.isEmpty {
+                hooks.removeValue(forKey: event)
+            } else {
+                hooks[event] = cleanedEvent
+            }
+        }
+
+        for event in events {
+            let existingEvent = hooks[event] as? [[String: Any]] ?? []
+            hooks[event] = existingEvent + entry
+        }
+
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(
+            withJSONObject: json,
+            options: [.prettyPrinted, .sortedKeys]
+        ) {
+            try? data.write(to: hooksURL)
+        }
+    }
+
     /// Check if hooks are currently installed
     static func isInstalled() -> Bool {
         isInstalledInJSON(ClaudePaths.settingsFile, matching: "claude-island-state.py") ||
         isInstalledInJSON(CodexPaths.hooksFile, matching: "codex-island-state.py") ||
-        isInstalledInJSON(CopilotPaths.configFile, matching: "copilot-island-state.py")
+        isInstalledInJSON(CopilotPaths.configFile, matching: "copilot-island-state.py") ||
+        isInstalledInJSON(OpenCodePaths.hooksFile, matching: "opencode-island-state.py")
     }
 
     /// Uninstall hooks from settings.json and remove script
@@ -238,6 +288,11 @@ struct HookInstaller {
             CopilotPaths.configFile,
             scriptURL: CopilotPaths.hooksDir.appendingPathComponent("copilot-island-state.py"),
             remover: removingCopilotIslandHooks
+        )
+        uninstallFromJSON(
+            OpenCodePaths.hooksFile,
+            scriptURL: OpenCodePaths.hooksDir.appendingPathComponent("opencode-island-state.py"),
+            remover: removingOpenCodeIslandHooks
         )
     }
 
@@ -313,6 +368,24 @@ struct HookInstaller {
     nonisolated private static func isCopilotIslandHook(_ hook: [String: Any]) -> Bool {
         let command = (hook["command"] as? String) ?? (hook["bash"] as? String) ?? ""
         return command.contains("copilot-island-state.py")
+    }
+
+    nonisolated private static func removingOpenCodeIslandHooks(from entry: [String: Any]) -> [String: Any]? {
+        guard var entryHooks = entry["hooks"] as? [[String: Any]] else {
+            return entry
+        }
+
+        entryHooks.removeAll(where: isOpenCodeIslandHook)
+        guard !entryHooks.isEmpty else { return nil }
+
+        var updatedEntry = entry
+        updatedEntry["hooks"] = entryHooks
+        return updatedEntry
+    }
+
+    nonisolated private static func isOpenCodeIslandHook(_ hook: [String: Any]) -> Bool {
+        let cmd = hook["command"] as? String ?? ""
+        return cmd.contains("opencode-island-state.py")
     }
 
     private static func isInstalledInJSON(_ url: URL, matching needle: String) -> Bool {
