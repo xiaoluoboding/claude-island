@@ -58,12 +58,12 @@ actor OpenCodeConversationParser {
     }
 
     func parseFullConversation(sessionId: String, cwd: String) -> [ChatMessage] {
-        let rows = queryMessages(sessionId: sessionId)
-        return parseRows(rows)
+        let rows = queryMessagesWithParts(sessionId: sessionId)
+        return buildMessages(from: rows)
     }
 
     func parseIncremental(sessionId: String, cwd: String) -> IncrementalParseResult {
-        let rows = queryMessages(sessionId: sessionId)
+        let rows = queryMessagesWithParts(sessionId: sessionId)
         var cache = sessionCaches[sessionId] ?? SessionCache()
 
         if rows.count == cache.lastRowCount {
@@ -75,10 +75,8 @@ actor OpenCodeConversationParser {
             )
         }
 
-        // Parse all rows (SQLite doesn't support offset-based incremental easily
-        // with our JSON blob format, so we re-parse but deduplicate via seenIds)
+        let allParsed = buildMessages(from: rows)
         var newMessages: [ChatMessage] = []
-        let allParsed = parseRows(rows)
 
         for msg in allParsed {
             if cache.seenMessageIds.insert(msg.id).inserted {
@@ -87,10 +85,14 @@ actor OpenCodeConversationParser {
             }
         }
 
-        // Parse tool results from parts
-        let parts = queryParts(sessionId: sessionId)
-        for part in parts {
-            if let toolId = parseToolResult(from: part, cache: &cache) {
+        // Extract tool results from part data
+        for row in rows {
+            guard let partDataStr = row["part_data"] as? String,
+                  let partBytes = partDataStr.data(using: .utf8),
+                  let partData = try? JSONSerialization.jsonObject(with: partBytes) as? [String: Any] else {
+                continue
+            }
+            if let toolId = extractToolResult(from: partData, cache: &cache) {
                 cache.completedToolIds.insert(toolId)
             }
         }
@@ -120,34 +122,20 @@ actor OpenCodeConversationParser {
 
     // MARK: - SQLite Queries
 
-    /// Query messages from the SQLite DB using the sqlite3 CLI.
-    /// Returns an array of JSON-decoded dictionaries.
-    private func queryMessages(sessionId: String) -> [[String: Any]] {
+    /// Query messages joined with their text parts from the SQLite DB.
+    /// Returns rows with msg_id, msg_data (JSON), part_data (JSON).
+    private func queryMessagesWithParts(sessionId: String) -> [[String: Any]] {
         let dbPath = OpenCodePaths.databaseFile.path
         guard FileManager.default.fileExists(atPath: dbPath) else { return [] }
 
         let safeId = sessionId.replacingOccurrences(of: "'", with: "''")
+        // Join message + part tables to get role from message and text from parts
         let query = """
-        SELECT m.id, m.session_id, m.data
-        FROM message m
-        WHERE m.session_id = '\(safeId)'
-        ORDER BY m.rowid;
-        """
-
-        return runSQLiteQuery(dbPath: dbPath, query: query)
-    }
-
-    /// Query parts from the SQLite DB.
-    private func queryParts(sessionId: String) -> [[String: Any]] {
-        let dbPath = OpenCodePaths.databaseFile.path
-        guard FileManager.default.fileExists(atPath: dbPath) else { return [] }
-
-        let safeId = sessionId.replacingOccurrences(of: "'", with: "''")
-        let query = """
-        SELECT p.id, p.message_id, p.session_id, p.data
+        SELECT m.id as msg_id, m.data as msg_data, p.id as part_id, p.data as part_data
         FROM part p
+        JOIN message m ON p.message_id = m.id
         WHERE p.session_id = '\(safeId)'
-        ORDER BY p.rowid;
+        ORDER BY m.time_created, p.time_created;
         """
 
         return runSQLiteQuery(dbPath: dbPath, query: query)
@@ -184,22 +172,41 @@ actor OpenCodeConversationParser {
 
     // MARK: - Parsing
 
-    private func parseRows(_ rows: [[String: Any]]) -> [ChatMessage] {
-        var messages: [ChatMessage] = []
-        var seenIds: Set<String> = []
+    /// Build ChatMessage array from joined message+part rows.
+    /// Groups parts by message_id, extracts role from msg_data, text from part_data.
+    private func buildMessages(from rows: [[String: Any]]) -> [ChatMessage] {
+        // Group parts by message ID, preserving order
+        var messageOrder: [String] = []
+        var messageData: [String: [String: Any]] = [:]
+        var messageParts: [String: [[String: Any]]] = [:]
 
         for row in rows {
-            guard let id = row["id"] as? String,
-                  seenIds.insert(id).inserted else { continue }
+            guard let msgId = row["msg_id"] as? String else { continue }
 
-            // The `data` column is a JSON string
-            guard let dataStr = row["data"] as? String,
-                  let dataBytes = dataStr.data(using: .utf8),
-                  let data = try? JSONSerialization.jsonObject(with: dataBytes) as? [String: Any] else {
-                continue
+            if messageData[msgId] == nil {
+                messageOrder.append(msgId)
+                // Parse msg_data JSON
+                if let msgDataStr = row["msg_data"] as? String,
+                   let bytes = msgDataStr.data(using: .utf8),
+                   let parsed = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] {
+                    messageData[msgId] = parsed
+                }
             }
 
-            guard let roleStr = data["role"] as? String else { continue }
+            // Parse part_data JSON
+            if let partDataStr = row["part_data"] as? String,
+               let bytes = partDataStr.data(using: .utf8),
+               let parsed = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] {
+                messageParts[msgId, default: []].append(parsed)
+            }
+        }
+
+        var messages: [ChatMessage] = []
+
+        for msgId in messageOrder {
+            guard let msgData = messageData[msgId] else { continue }
+            guard let roleStr = msgData["role"] as? String else { continue }
+
             let role: ChatRole
             switch roleStr {
             case "user": role = .user
@@ -207,34 +214,50 @@ actor OpenCodeConversationParser {
             default: continue
             }
 
-            // Parse timestamp from data.time.created (Unix epoch seconds)
+            // Timestamp from msg_data.time.created (milliseconds since epoch)
             var timestamp = Date()
-            if let timeObj = data["time"] as? [String: Any],
+            if let timeObj = msgData["time"] as? [String: Any],
                let created = timeObj["created"] as? Double {
-                timestamp = Date(timeIntervalSince1970: created)
+                timestamp = Date(timeIntervalSince1970: created / 1000.0)
             }
 
-            let msgId = "opencode-\(roleStr)-\(id)"
-
-            // For user messages, there's no inline text — content comes from parts
-            // For assistant messages, same — text is in parts
-            // But we'll include a placeholder text from data if available
+            // Collect text blocks from parts
             var blocks: [MessageBlock] = []
+            let parts = messageParts[msgId] ?? []
 
-            // Some message formats include summary.title
-            if let summary = data["summary"] as? [String: Any],
-               let title = summary["title"] as? String, !title.isEmpty {
-                blocks.append(.text(title))
+            for part in parts {
+                guard let partType = part["type"] as? String else { continue }
+
+                switch partType {
+                case "text":
+                    if let text = part["text"] as? String {
+                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            blocks.append(.text(trimmed))
+                        }
+                    }
+
+                case "tool-invocation":
+                    let toolName = (part["toolName"] as? String) ?? (part["name"] as? String) ?? "unknown"
+                    let callId = (part["toolCallId"] as? String) ?? (part["id"] as? String) ?? UUID().uuidString
+                    var input: [String: String] = [:]
+                    if let args = part["args"] as? [String: Any] {
+                        for (k, v) in args {
+                            input[k] = "\(v)"
+                        }
+                    }
+                    blocks.append(.toolUse(ToolUseBlock(id: callId, name: toolName, input: input)))
+
+                default:
+                    break
+                }
             }
 
-            // We'll also attach parts inline if this is a small session
-            // (large sessions use incremental parsing)
-            if blocks.isEmpty {
-                blocks.append(.text(""))
-            }
+            guard !blocks.isEmpty else { continue }
 
+            let chatId = "opencode-\(roleStr)-\(msgId)"
             messages.append(ChatMessage(
-                id: msgId,
+                id: chatId,
                 role: role,
                 timestamp: timestamp,
                 content: blocks
@@ -244,25 +267,24 @@ actor OpenCodeConversationParser {
         return messages
     }
 
-    /// Attach part content to existing messages or create tool-use blocks.
-    private func parseToolResult(from partRow: [String: Any], cache: inout SessionCache) -> String? {
-        guard let dataStr = partRow["data"] as? String,
-              let dataBytes = dataStr.data(using: .utf8),
-              let data = try? JSONSerialization.jsonObject(with: dataBytes) as? [String: Any] else {
-            return nil
-        }
+    /// Extract tool result from a part data dictionary.
+    private func extractToolResult(from partData: [String: Any], cache: inout SessionCache) -> String? {
+        let partType = partData["type"] as? String
 
-        let partType = data["type"] as? String
+        if partType == "tool-invocation" {
+            let state = partData["state"] as? String
+            if state == "result" || state == "completed" {
+                let toolCallId = (partData["toolCallId"] as? String) ?? (partData["id"] as? String) ?? ""
+                guard !toolCallId.isEmpty else { return nil }
 
-        // Tool invocation result
-        if partType == "tool-result" || partType == "tool-invocation" {
-            let toolCallId = data["toolCallId"] as? String ?? data["id"] as? String ?? ""
-            guard !toolCallId.isEmpty else { return nil }
+                let resultText: String?
+                if let result = partData["result"] as? [[String: Any]] {
+                    resultText = result.compactMap { $0["text"] as? String }.joined(separator: "\n")
+                } else {
+                    resultText = partData["output"] as? String
+                }
 
-            if partType == "tool-result" {
-                let resultText = data["result"] as? String
-                    ?? (data["output"] as? String)
-                let isError = data["isError"] as? Bool ?? false
+                let isError = partData["isError"] as? Bool ?? false
                 cache.toolResults[toolCallId] = ConversationParser.ToolResult(
                     content: resultText,
                     stdout: nil,
