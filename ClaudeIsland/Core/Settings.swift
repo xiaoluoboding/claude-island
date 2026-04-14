@@ -7,6 +7,20 @@
 
 import Foundation
 
+/// Available buddy icons for the notch
+enum BuddyIcon: String, CaseIterable {
+    case invader = "Invader"
+    case ghost = "Ghost"
+    case coffee = "Coffee"
+    case alien = "Alien"
+    case dino = "Dino"
+    case gamepad = "Gamepad"
+    case skull = "Skull"
+    case phoenix = "Phoenix"
+    case ufoBeam = "UFO Beam"
+    case robot = "Robot"
+}
+
 /// Available notification sounds
 enum NotificationSound: String, CaseIterable {
     case none = "None"
@@ -39,6 +53,7 @@ enum AppSettings {
     private enum Keys {
         static let notificationSound = "notificationSound"
         static let claudeDirectoryName = "claudeDirectoryName"
+        static let buddyIcon = "buddyIcon"
     }
 
     // MARK: - Notification Sound
@@ -69,6 +84,22 @@ enum AppSettings {
         }
         set {
             defaults.set(newValue.trimmingCharacters(in: .whitespaces), forKey: Keys.claudeDirectoryName)
+        }
+    }
+
+    // MARK: - Buddy Icon
+
+    /// The pixel-art buddy icon shown in the notch
+    static var buddyIcon: BuddyIcon {
+        get {
+            guard let rawValue = defaults.string(forKey: Keys.buddyIcon),
+                  let icon = BuddyIcon(rawValue: rawValue) else {
+                return .invader
+            }
+            return icon
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Keys.buddyIcon)
         }
     }
 }

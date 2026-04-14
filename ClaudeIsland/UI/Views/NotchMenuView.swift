@@ -18,6 +18,7 @@ struct NotchMenuView: View {
     @ObservedObject private var updateManager = UpdateManager.shared
     @ObservedObject private var screenSelector = ScreenSelector.shared
     @ObservedObject private var soundSelector = SoundSelector.shared
+    @ObservedObject private var buddySelector = BuddySelector.shared
     @State private var hooksInstalled: Bool = false
     @State private var launchAtLogin: Bool = false
 
@@ -39,6 +40,7 @@ struct NotchMenuView: View {
                     .padding(.vertical, 4)
 
                 // Appearance settings
+                BuddyPickerRow(buddySelector: buddySelector)
                 ScreenPickerRow(screenSelector: screenSelector)
                 SoundPickerRow(soundSelector: soundSelector)
                 ClaudeDirPickerRow()

@@ -20,6 +20,7 @@ struct NotchView: View {
     @StateObject private var sessionMonitor = ClaudeSessionMonitor()
     @StateObject private var activityCoordinator = NotchActivityCoordinator.shared
     @ObservedObject private var updateManager = UpdateManager.shared
+    @ObservedObject private var buddySelector = BuddySelector.shared
     @State private var previousPendingIds: Set<String> = []
     @State private var previousWaitingForInputIds: Set<String> = []
     @State private var waitingForInputTimestamps: [String: Date] = [:]  // sessionId -> when it entered waitingForInput
@@ -279,7 +280,8 @@ struct NotchView: View {
                         source: prominentSource,
                         size: 14,
                         animate: isProcessing,
-                        prefersClaudeTheme: hasDetectedClaudeSession
+                        prefersClaudeTheme: hasDetectedClaudeSession,
+                        buddy: buddySelector.selectedBuddy
                     )
                         .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
 
@@ -343,7 +345,8 @@ struct NotchView: View {
                 SessionSourceBrandIcon(
                     source: prominentSource,
                     size: 14,
-                    prefersClaudeTheme: hasDetectedClaudeSession
+                    prefersClaudeTheme: hasDetectedClaudeSession,
+                    buddy: buddySelector.selectedBuddy
                 )
                     .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: !showClosedActivity)
                     .padding(.leading, 8)

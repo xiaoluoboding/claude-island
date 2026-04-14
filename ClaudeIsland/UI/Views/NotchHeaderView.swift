@@ -13,6 +13,7 @@ struct SessionSourceBrandIcon: View {
     let size: CGFloat
     var animate: Bool = false
     var prefersClaudeTheme: Bool = false
+    var buddy: BuddyIcon = AppSettings.buddyIcon
 
     var body: some View {
         Group {
@@ -21,7 +22,7 @@ struct SessionSourceBrandIcon: View {
             } else if source == .copilot {
                 CopilotPixelFaceIcon(size: size, animate: true)
             } else {
-                MultiCliPixelIcon(size: size, animate: animate)
+                MultiCliPixelIcon(size: size, animate: animate, buddy: buddy)
             }
         }
     }
@@ -99,9 +100,36 @@ struct CopilotPixelBadgeIcon: View {
 struct MultiCliPixelIcon: View {
     let size: CGFloat
     var animate: Bool = false
+    var buddy: BuddyIcon = AppSettings.buddyIcon
 
-    // Coordinates in an 8x8 grid mapped from the provided 142x142 SVG.
-    private let pixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+    private var pixels: [(x: CGFloat, y: CGFloat, color: Color)] {
+        switch buddy {
+        case .invader:
+            return Self.invaderPixels
+        case .ghost:
+            return Self.ghostPixels
+        case .coffee:
+            return Self.coffeePixels
+        case .alien:
+            return Self.alienPixels
+        case .dino:
+            return Self.dinoPixels
+        case .gamepad:
+            return Self.gamepadPixels
+        case .skull:
+            return Self.skullPixels
+        case .phoenix:
+            return Self.phoenixPixels
+        case .ufoBeam:
+            return Self.ufoBeamPixels
+        case .robot:
+            return Self.robotPixels
+        }
+    }
+
+    // MARK: - Pixel Data
+
+    private static let invaderPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
         (2, 0, Color(red: 247 / 255, green: 37 / 255, blue: 133 / 255)),
         (5, 0, Color(red: 247 / 255, green: 37 / 255, blue: 133 / 255)),
         (3, 1, Color(red: 171 / 255, green: 21 / 255, blue: 162 / 255)),
@@ -134,6 +162,372 @@ struct MultiCliPixelIcon: View {
         (7, 6, Color(red: 71 / 255, green: 142 / 255, blue: 239 / 255)),
         (3, 7, Color(red: 76 / 255, green: 201 / 255, blue: 240 / 255)),
         (4, 7, Color(red: 76 / 255, green: 201 / 255, blue: 240 / 255))
+    ]
+
+    private static let ghostPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (2, 0, Color(red: 1, green: 0, blue: 1)),
+        (3, 0, Color(red: 1, green: 0, blue: 1)),
+        (4, 0, Color(red: 1, green: 0, blue: 1)),
+        (5, 0, Color(red: 1, green: 0, blue: 1)),
+        (1, 1, Color(red: 219 / 255, green: 0, blue: 1)),
+        (2, 1, Color(red: 219 / 255, green: 0, blue: 1)),
+        (3, 1, Color(red: 219 / 255, green: 0, blue: 1)),
+        (4, 1, Color(red: 219 / 255, green: 0, blue: 1)),
+        (5, 1, Color(red: 219 / 255, green: 0, blue: 1)),
+        (6, 1, Color(red: 219 / 255, green: 0, blue: 1)),
+        (0, 2, Color(red: 182 / 255, green: 0, blue: 1)),
+        (1, 2, Color(red: 182 / 255, green: 0, blue: 1)),
+        (3, 2, Color(red: 182 / 255, green: 0, blue: 1)),
+        (4, 2, Color(red: 182 / 255, green: 0, blue: 1)),
+        (6, 2, Color(red: 182 / 255, green: 0, blue: 1)),
+        (7, 2, Color(red: 182 / 255, green: 0, blue: 1)),
+        (0, 3, Color(red: 146 / 255, green: 0, blue: 1)),
+        (1, 3, Color(red: 146 / 255, green: 0, blue: 1)),
+        (2, 3, Color(red: 146 / 255, green: 0, blue: 1)),
+        (3, 3, Color(red: 146 / 255, green: 0, blue: 1)),
+        (4, 3, Color(red: 146 / 255, green: 0, blue: 1)),
+        (5, 3, Color(red: 146 / 255, green: 0, blue: 1)),
+        (6, 3, Color(red: 146 / 255, green: 0, blue: 1)),
+        (7, 3, Color(red: 146 / 255, green: 0, blue: 1)),
+        (0, 4, Color(red: 110 / 255, green: 36 / 255, blue: 1)),
+        (1, 4, Color(red: 110 / 255, green: 36 / 255, blue: 1)),
+        (2, 4, Color(red: 110 / 255, green: 36 / 255, blue: 1)),
+        (3, 4, Color(red: 110 / 255, green: 36 / 255, blue: 1)),
+        (4, 4, Color(red: 110 / 255, green: 36 / 255, blue: 1)),
+        (5, 4, Color(red: 110 / 255, green: 36 / 255, blue: 1)),
+        (6, 4, Color(red: 110 / 255, green: 36 / 255, blue: 1)),
+        (7, 4, Color(red: 110 / 255, green: 36 / 255, blue: 1)),
+        (0, 5, Color(red: 73 / 255, green: 109 / 255, blue: 1)),
+        (1, 5, Color(red: 73 / 255, green: 109 / 255, blue: 1)),
+        (2, 5, Color(red: 73 / 255, green: 109 / 255, blue: 1)),
+        (3, 5, Color(red: 73 / 255, green: 109 / 255, blue: 1)),
+        (4, 5, Color(red: 73 / 255, green: 109 / 255, blue: 1)),
+        (5, 5, Color(red: 73 / 255, green: 109 / 255, blue: 1)),
+        (6, 5, Color(red: 73 / 255, green: 109 / 255, blue: 1)),
+        (7, 5, Color(red: 73 / 255, green: 109 / 255, blue: 1)),
+        (0, 6, Color(red: 37 / 255, green: 182 / 255, blue: 1)),
+        (1, 6, Color(red: 37 / 255, green: 182 / 255, blue: 1)),
+        (2, 6, Color(red: 37 / 255, green: 182 / 255, blue: 1)),
+        (3, 6, Color(red: 37 / 255, green: 182 / 255, blue: 1)),
+        (4, 6, Color(red: 37 / 255, green: 182 / 255, blue: 1)),
+        (5, 6, Color(red: 37 / 255, green: 182 / 255, blue: 1)),
+        (6, 6, Color(red: 37 / 255, green: 182 / 255, blue: 1)),
+        (7, 6, Color(red: 37 / 255, green: 182 / 255, blue: 1)),
+        (0, 7, Color(red: 0, green: 1, blue: 1)),
+        (2, 7, Color(red: 0, green: 1, blue: 1)),
+        (5, 7, Color(red: 0, green: 1, blue: 1)),
+        (7, 7, Color(red: 0, green: 1, blue: 1)),
+    ]
+
+    private static let coffeePixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (3, 0, Color(red: 1, green: 0, blue: 0)),
+        (2, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (3, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (0, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (1, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (2, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (3, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (4, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (5, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (0, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (1, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (2, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (3, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (4, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (5, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (6, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (0, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (1, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (2, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (3, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (4, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (5, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (6, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (1, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (2, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (3, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (4, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (5, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (2, 7, Color(red: 1, green: 1, blue: 0)),
+        (3, 7, Color(red: 1, green: 1, blue: 0)),
+        (4, 7, Color(red: 1, green: 1, blue: 0)),
+    ]
+
+    private static let alienPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (2, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (3, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (4, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (5, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (1, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (2, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (3, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (4, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (5, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (6, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (0, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (1, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (3, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (4, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (6, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (7, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (0, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (1, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (2, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (3, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (4, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (5, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (6, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (7, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (1, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (2, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (3, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (4, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (5, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (6, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (2, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (5, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (1, 6, Color(red: 182 / 255, green: 39 / 255, blue: 1)),
+        (6, 6, Color(red: 182 / 255, green: 39 / 255, blue: 1)),
+        (0, 7, Color(red: 1, green: 0, blue: 1)),
+        (7, 7, Color(red: 1, green: 0, blue: 1)),
+    ]
+
+    private static let dinoPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (4, 0, Color(red: 0, green: 1, blue: 136 / 255)),
+        (5, 0, Color(red: 0, green: 1, blue: 136 / 255)),
+        (6, 0, Color(red: 0, green: 1, blue: 136 / 255)),
+        (7, 0, Color(red: 0, green: 1, blue: 136 / 255)),
+        (4, 1, Color(red: 0, green: 231 / 255, blue: 97 / 255)),
+        (6, 1, Color(red: 0, green: 231 / 255, blue: 97 / 255)),
+        (7, 1, Color(red: 0, green: 231 / 255, blue: 97 / 255)),
+        (4, 2, Color(red: 0, green: 206 / 255, blue: 58 / 255)),
+        (5, 2, Color(red: 0, green: 206 / 255, blue: 58 / 255)),
+        (6, 2, Color(red: 0, green: 206 / 255, blue: 58 / 255)),
+        (7, 2, Color(red: 0, green: 206 / 255, blue: 58 / 255)),
+        (4, 3, Color(red: 0, green: 182 / 255, blue: 19 / 255)),
+        (5, 3, Color(red: 0, green: 182 / 255, blue: 19 / 255)),
+        (0, 4, Color(red: 0, green: 158 / 255, blue: 0)),
+        (3, 4, Color(red: 0, green: 158 / 255, blue: 0)),
+        (4, 4, Color(red: 0, green: 158 / 255, blue: 0)),
+        (5, 4, Color(red: 0, green: 158 / 255, blue: 0)),
+        (0, 5, Color(red: 0, green: 134 / 255, blue: 0)),
+        (1, 5, Color(red: 0, green: 134 / 255, blue: 0)),
+        (2, 5, Color(red: 0, green: 134 / 255, blue: 0)),
+        (3, 5, Color(red: 0, green: 134 / 255, blue: 0)),
+        (4, 5, Color(red: 0, green: 134 / 255, blue: 0)),
+        (5, 5, Color(red: 0, green: 134 / 255, blue: 0)),
+        (1, 6, Color(red: 0, green: 109 / 255, blue: 0)),
+        (2, 6, Color(red: 0, green: 109 / 255, blue: 0)),
+        (3, 6, Color(red: 0, green: 109 / 255, blue: 0)),
+        (4, 6, Color(red: 0, green: 109 / 255, blue: 0)),
+        (5, 6, Color(red: 0, green: 109 / 255, blue: 0)),
+        (2, 7, Color(red: 0, green: 85 / 255, blue: 0)),
+        (5, 7, Color(red: 0, green: 85 / 255, blue: 0)),
+    ]
+
+    private static let gamepadPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (1, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (2, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (3, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (4, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (5, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (6, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (0, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (1, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (2, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (3, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (4, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (5, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (6, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (7, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (0, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (1, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (3, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (4, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (6, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (7, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (0, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (1, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (2, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (3, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (4, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (5, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (6, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (7, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (0, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (1, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (2, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (3, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (4, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (5, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (6, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (7, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (1, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (2, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (5, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (6, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+    ]
+
+    private static let skullPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (2, 0, Color(red: 1, green: 1, blue: 1)),
+        (3, 0, Color(red: 1, green: 1, blue: 1)),
+        (4, 0, Color(red: 1, green: 1, blue: 1)),
+        (5, 0, Color(red: 1, green: 1, blue: 1)),
+        (1, 1, Color(red: 231 / 255, green: 231 / 255, blue: 231 / 255)),
+        (2, 1, Color(red: 231 / 255, green: 231 / 255, blue: 231 / 255)),
+        (3, 1, Color(red: 231 / 255, green: 231 / 255, blue: 231 / 255)),
+        (4, 1, Color(red: 231 / 255, green: 231 / 255, blue: 231 / 255)),
+        (5, 1, Color(red: 231 / 255, green: 231 / 255, blue: 231 / 255)),
+        (6, 1, Color(red: 231 / 255, green: 231 / 255, blue: 231 / 255)),
+        (0, 2, Color(red: 206 / 255, green: 206 / 255, blue: 206 / 255)),
+        (1, 2, Color(red: 206 / 255, green: 206 / 255, blue: 206 / 255)),
+        (3, 2, Color(red: 206 / 255, green: 206 / 255, blue: 206 / 255)),
+        (4, 2, Color(red: 206 / 255, green: 206 / 255, blue: 206 / 255)),
+        (6, 2, Color(red: 206 / 255, green: 206 / 255, blue: 206 / 255)),
+        (7, 2, Color(red: 206 / 255, green: 206 / 255, blue: 206 / 255)),
+        (0, 3, Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255)),
+        (1, 3, Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255)),
+        (2, 3, Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255)),
+        (3, 3, Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255)),
+        (4, 3, Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255)),
+        (5, 3, Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255)),
+        (6, 3, Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255)),
+        (7, 3, Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255)),
+        (0, 4, Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255)),
+        (1, 4, Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255)),
+        (2, 4, Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255)),
+        (3, 4, Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255)),
+        (4, 4, Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255)),
+        (5, 4, Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255)),
+        (6, 4, Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255)),
+        (7, 4, Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255)),
+        (1, 5, Color(red: 134 / 255, green: 134 / 255, blue: 134 / 255)),
+        (2, 5, Color(red: 134 / 255, green: 134 / 255, blue: 134 / 255)),
+        (3, 5, Color(red: 134 / 255, green: 134 / 255, blue: 134 / 255)),
+        (4, 5, Color(red: 134 / 255, green: 134 / 255, blue: 134 / 255)),
+        (5, 5, Color(red: 134 / 255, green: 134 / 255, blue: 134 / 255)),
+        (6, 5, Color(red: 134 / 255, green: 134 / 255, blue: 134 / 255)),
+        (2, 6, Color(red: 109 / 255, green: 109 / 255, blue: 109 / 255)),
+        (5, 6, Color(red: 109 / 255, green: 109 / 255, blue: 109 / 255)),
+        (2, 7, Color(red: 85 / 255, green: 85 / 255, blue: 85 / 255)),
+        (3, 7, Color(red: 85 / 255, green: 85 / 255, blue: 85 / 255)),
+        (4, 7, Color(red: 85 / 255, green: 85 / 255, blue: 85 / 255)),
+        (5, 7, Color(red: 85 / 255, green: 85 / 255, blue: 85 / 255)),
+    ]
+
+    private static let phoenixPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (0, 0, Color(red: 1, green: 0, blue: 0)),
+        (3, 0, Color(red: 1, green: 0, blue: 0)),
+        (4, 0, Color(red: 1, green: 0, blue: 0)),
+        (7, 0, Color(red: 1, green: 0, blue: 0)),
+        (0, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (1, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (3, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (4, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (6, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (7, 1, Color(red: 1, green: 39 / 255, blue: 0)),
+        (1, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (2, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (3, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (4, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (5, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (6, 2, Color(red: 1, green: 78 / 255, blue: 0)),
+        (2, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (3, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (4, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (5, 3, Color(red: 1, green: 117 / 255, blue: 0)),
+        (1, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (2, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (3, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (4, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (5, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (6, 4, Color(red: 1, green: 153 / 255, blue: 0)),
+        (0, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (1, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (3, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (4, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (6, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (7, 5, Color(red: 1, green: 187 / 255, blue: 0)),
+        (0, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (3, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (4, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (7, 6, Color(red: 1, green: 221 / 255, blue: 0)),
+        (2, 7, Color(red: 1, green: 1, blue: 0)),
+        (5, 7, Color(red: 1, green: 1, blue: 0)),
+    ]
+
+    private static let ufoBeamPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (3, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (4, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (2, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (3, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (4, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (5, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (1, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (2, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (3, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (4, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (5, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (6, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (0, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (1, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (2, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (3, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (4, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (5, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (6, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (7, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (1, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (3, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (4, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (6, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (2, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (5, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (1, 6, Color(red: 182 / 255, green: 39 / 255, blue: 1)),
+        (6, 6, Color(red: 182 / 255, green: 39 / 255, blue: 1)),
+        (0, 7, Color(red: 1, green: 0, blue: 1)),
+        (7, 7, Color(red: 1, green: 0, blue: 1)),
+    ]
+
+    private static let robotPixels: [(x: CGFloat, y: CGFloat, color: Color)] = [
+        (2, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (3, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (4, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (5, 0, Color(red: 0, green: 1, blue: 204 / 255)),
+        (1, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (2, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (3, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (4, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (5, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (6, 1, Color(red: 0, green: 221 / 255, blue: 219 / 255)),
+        (1, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (3, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (4, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (6, 2, Color(red: 0, green: 187 / 255, blue: 233 / 255)),
+        (1, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (2, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (3, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (4, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (5, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (6, 3, Color(red: 0, green: 153 / 255, blue: 248 / 255)),
+        (2, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (3, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (4, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (5, 4, Color(red: 36 / 255, green: 117 / 255, blue: 1)),
+        (1, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (2, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (3, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (4, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (5, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (6, 5, Color(red: 109 / 255, green: 78 / 255, blue: 1)),
+        (1, 6, Color(red: 182 / 255, green: 39 / 255, blue: 1)),
+        (3, 6, Color(red: 182 / 255, green: 39 / 255, blue: 1)),
+        (4, 6, Color(red: 182 / 255, green: 39 / 255, blue: 1)),
+        (6, 6, Color(red: 182 / 255, green: 39 / 255, blue: 1)),
+        (1, 7, Color(red: 1, green: 0, blue: 1)),
+        (3, 7, Color(red: 1, green: 0, blue: 1)),
+        (4, 7, Color(red: 1, green: 0, blue: 1)),
+        (6, 7, Color(red: 1, green: 0, blue: 1)),
     ]
 
     var body: some View {
