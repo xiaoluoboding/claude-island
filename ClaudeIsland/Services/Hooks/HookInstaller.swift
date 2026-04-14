@@ -42,11 +42,8 @@ struct HookInstaller {
     }
 
     private static func installOpenCodeHooks() {
-        installBundledScript(
-            named: "opencode-island-state",
-            into: OpenCodePaths.hooksDir.appendingPathComponent("opencode-island-state.py")
-        )
-        updateOpenCodeHooksFile(at: OpenCodePaths.hooksFile)
+        installOpenCodePlugin()
+        registerOpenCodePlugin()
     }
 
     private static func installBundledScript(named resource: String, into destination: URL) {
@@ -224,43 +221,77 @@ struct HookInstaller {
         }
     }
 
-    private static func updateOpenCodeHooksFile(at hooksURL: URL) {
-        var json: [String: Any] = [:]
-        if let data = try? Data(contentsOf: hooksURL),
-           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            json = existing
+    /// Install the OpenCode plugin JS + package.json to ~/.claude-island/opencode-plugin/
+    private static func installOpenCodePlugin() {
+        let pluginDir = OpenCodePaths.pluginDir
+
+        try? FileManager.default.createDirectory(
+            at: pluginDir,
+            withIntermediateDirectories: true
+        )
+
+        // Copy the bundled plugin .mjs file
+        if let bundledURL = Bundle.main.url(
+            forResource: "claude-island-opencode-plugin",
+            withExtension: "mjs"
+        ) {
+            let dest = OpenCodePaths.pluginFile
+            try? FileManager.default.removeItem(at: dest)
+            try? FileManager.default.copyItem(at: bundledURL, to: dest)
         }
 
-        let python = detectPython()
-        let command = "\(python) \(OpenCodePaths.hookScriptShellPath) --source opencode"
-        let hookEntry: [[String: Any]] = [["type": "command", "command": command, "timeout": 5]]
-        let entry: [[String: Any]] = [["hooks": hookEntry]]
-        let events = ["UserPromptSubmit", "Stop"]
-
-        var hooks = json["hooks"] as? [String: Any] ?? [:]
-
-        for (event, value) in hooks {
-            guard let existingEvent = value as? [[String: Any]] else { continue }
-            let cleanedEvent = existingEvent.compactMap { removingOpenCodeIslandHooks(from: $0) }
-            if cleanedEvent.isEmpty {
-                hooks.removeValue(forKey: event)
-            } else {
-                hooks[event] = cleanedEvent
-            }
-        }
-
-        for event in events {
-            let existingEvent = hooks[event] as? [[String: Any]] ?? []
-            hooks[event] = existingEvent + entry
-        }
-
-        json["hooks"] = hooks
+        // Write a minimal package.json that makes this directory a valid plugin
+        let packageJSON: [String: Any] = [
+            "name": "claude-island-opencode-plugin",
+            "version": "1.0.0",
+            "type": "module",
+            "main": "claude-island-opencode-plugin.mjs",
+            "exports": ["./server": "./claude-island-opencode-plugin.mjs"]
+        ]
 
         if let data = try? JSONSerialization.data(
-            withJSONObject: json,
+            withJSONObject: packageJSON,
             options: [.prettyPrinted, .sortedKeys]
         ) {
-            try? data.write(to: hooksURL)
+            try? data.write(to: OpenCodePaths.pluginPackageJSON)
+        }
+    }
+
+    /// Register the plugin in ~/.config/opencode/opencode.json under the "plugin" key
+    private static func registerOpenCodePlugin() {
+        let configURL = OpenCodePaths.configFile
+
+        // Read existing config (or start with empty)
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        } else {
+            // Config file doesn't exist — OpenCode may not be installed
+            return
+        }
+
+        let pluginPath = OpenCodePaths.pluginDir.path
+
+        // Get existing plugins array
+        var plugins: [Any] = json["plugin"] as? [Any] ?? []
+
+        // Check if our plugin is already registered
+        let alreadyRegistered = plugins.contains { entry in
+            if let str = entry as? String { return str == pluginPath }
+            if let arr = entry as? [Any], let str = arr.first as? String { return str == pluginPath }
+            return false
+        }
+
+        if !alreadyRegistered {
+            plugins.append(pluginPath)
+            json["plugin"] = plugins
+            if let data = try? JSONSerialization.data(
+                withJSONObject: json,
+                options: [.prettyPrinted, .sortedKeys]
+            ) {
+                try? data.write(to: configURL)
+            }
         }
     }
 
@@ -269,7 +300,7 @@ struct HookInstaller {
         isInstalledInJSON(ClaudePaths.settingsFile, matching: "claude-island-state.py") ||
         isInstalledInJSON(CodexPaths.hooksFile, matching: "codex-island-state.py") ||
         isInstalledInJSON(CopilotPaths.configFile, matching: "copilot-island-state.py") ||
-        isInstalledInJSON(OpenCodePaths.hooksFile, matching: "opencode-island-state.py")
+        isOpenCodePluginInstalled()
     }
 
     /// Uninstall hooks from settings.json and remove script
@@ -289,11 +320,7 @@ struct HookInstaller {
             scriptURL: CopilotPaths.hooksDir.appendingPathComponent("copilot-island-state.py"),
             remover: removingCopilotIslandHooks
         )
-        uninstallFromJSON(
-            OpenCodePaths.hooksFile,
-            scriptURL: OpenCodePaths.hooksDir.appendingPathComponent("opencode-island-state.py"),
-            remover: removingOpenCodeIslandHooks
-        )
+        uninstallOpenCodePlugin()
     }
 
     private static func detectPython() -> String {
@@ -370,22 +397,50 @@ struct HookInstaller {
         return command.contains("copilot-island-state.py")
     }
 
-    nonisolated private static func removingOpenCodeIslandHooks(from entry: [String: Any]) -> [String: Any]? {
-        guard var entryHooks = entry["hooks"] as? [[String: Any]] else {
-            return entry
+    /// Check if the OpenCode plugin is registered in opencode.json
+    private static func isOpenCodePluginInstalled() -> Bool {
+        guard let data = try? Data(contentsOf: OpenCodePaths.configFile),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let plugins = json["plugin"] as? [Any] else {
+            return false
         }
 
-        entryHooks.removeAll(where: isOpenCodeIslandHook)
-        guard !entryHooks.isEmpty else { return nil }
-
-        var updatedEntry = entry
-        updatedEntry["hooks"] = entryHooks
-        return updatedEntry
+        let pluginPath = OpenCodePaths.pluginDir.path
+        return plugins.contains { entry in
+            if let str = entry as? String { return str == pluginPath }
+            if let arr = entry as? [Any], let str = arr.first as? String { return str == pluginPath }
+            return false
+        }
     }
 
-    nonisolated private static func isOpenCodeIslandHook(_ hook: [String: Any]) -> Bool {
-        let cmd = hook["command"] as? String ?? ""
-        return cmd.contains("opencode-island-state.py")
+    /// Remove the OpenCode plugin from config and delete plugin files
+    private static func uninstallOpenCodePlugin() {
+        // Remove from opencode.json config
+        let configURL = OpenCodePaths.configFile
+        if let data = try? Data(contentsOf: configURL),
+           var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           var plugins = json["plugin"] as? [Any] {
+            let pluginPath = OpenCodePaths.pluginDir.path
+            plugins.removeAll { entry in
+                if let str = entry as? String { return str == pluginPath }
+                if let arr = entry as? [Any], let str = arr.first as? String { return str == pluginPath }
+                return false
+            }
+            if plugins.isEmpty {
+                json.removeValue(forKey: "plugin")
+            } else {
+                json["plugin"] = plugins
+            }
+            if let updated = try? JSONSerialization.data(
+                withJSONObject: json,
+                options: [.prettyPrinted, .sortedKeys]
+            ) {
+                try? updated.write(to: configURL)
+            }
+        }
+
+        // Remove plugin files
+        try? FileManager.default.removeItem(at: OpenCodePaths.pluginDir)
     }
 
     private static func isInstalledInJSON(_ url: URL, matching needle: String) -> Bool {
