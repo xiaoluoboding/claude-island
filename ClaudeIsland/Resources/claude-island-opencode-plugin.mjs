@@ -72,12 +72,6 @@ function sendAndWaitForResponse(data) {
 
 // Singleton guard
 const GUARD_KEY = "__claudeIslandOpenCodePlugin__";
-if (globalThis[GUARD_KEY]) {
-  // Already loaded — export no-op to avoid duplicate event processing
-  export const server = async () => ({});
-} else {
-  globalThis[GUARD_KEY] = true;
-}
 
 // Child session cache to filter out subagent events
 const childSessionCache = new Map();
@@ -98,6 +92,9 @@ async function isChildSession(sessionID, client) {
 }
 
 export const server = async ({ client, project, directory }) => {
+  // If already loaded in this process, return no-op hooks
+  if (globalThis[GUARD_KEY]) return {};
+  globalThis[GUARD_KEY] = true;
   return {
     event: async ({ event }) => {
       const sessionID = event.properties?.sessionID;
