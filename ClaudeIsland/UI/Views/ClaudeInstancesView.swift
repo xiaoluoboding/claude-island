@@ -308,8 +308,8 @@ struct InstanceRow: View {
                         }
                     }
 
-                    // Archive button - only for idle or completed sessions
-                    if session.phase == .idle || session.phase == .waitingForInput {
+                    // Archive button - for idle, completed, or ended sessions
+                    if session.phase == .idle || session.phase == .waitingForInput || session.phase == .ended {
                         IconButton(icon: "archivebox") {
                             onArchive()
                         }

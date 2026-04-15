@@ -153,7 +153,11 @@ actor SessionStore {
         session.lastActivity = Date()
 
         if event.status == "ended" {
-            sessions.removeValue(forKey: sessionId)
+            // Transition to .ended phase but keep the session visible so the user
+            // can still see the completed conversation.  The session can be dismissed
+            // manually via the archive button.
+            session.phase = .ended
+            sessions[sessionId] = session
             cancelPendingSync(sessionId: sessionId)
             return
         }
@@ -1188,10 +1192,8 @@ actor SessionStore {
         var removedSession = false
 
         for (sessionId, session) in Array(sessions) {
+            // Ended sessions stay visible — skip them in the recheck
             if session.phase == .ended {
-                sessions.removeValue(forKey: sessionId)
-                cancelPendingSync(sessionId: sessionId)
-                removedSession = true
                 continue
             }
 
@@ -1199,7 +1201,10 @@ actor SessionStore {
                 let isRunning = isProcessRunning(pid: pid)
                 if !isRunning {
                     Self.logger.info("Process \(pid) no longer running, ending session \(sessionId.prefix(8))")
-                    sessions.removeValue(forKey: sessionId)
+                    // Transition to .ended instead of removing so it stays visible
+                    var endedSession = session
+                    endedSession.phase = .ended
+                    sessions[sessionId] = endedSession
                     cancelPendingSync(sessionId: sessionId)
                     removedSession = true
                     continue

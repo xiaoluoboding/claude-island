@@ -13,7 +13,11 @@ class ChatHistoryManager: ObservableObject {
     @Published private(set) var histories: [String: [ChatHistoryItem]] = [:]
     @Published private(set) var agentDescriptions: [String: [String: String]] = [:]
 
-    private var loadedSessions: Set<String> = []
+    /// Sessions whose JSONL file we've asked SessionStore to parse in this
+    /// app session. Only populated by `loadFromFile` — NOT by session
+    /// discovery via hooks. (Hook events only give tool calls, not the
+    /// full user/assistant text conversation.)
+    private var jsonlParsedSessions: Set<String> = []
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -31,13 +35,16 @@ class ChatHistoryManager: ObservableObject {
         histories[sessionId] ?? []
     }
 
+    /// Whether we've parsed the session's JSONL file in this app session.
+    /// Hook-driven session discovery does NOT mark a session as loaded —
+    /// only an explicit `loadFromFile` call does.
     func isLoaded(sessionId: String) -> Bool {
-        loadedSessions.contains(sessionId)
+        jsonlParsedSessions.contains(sessionId)
     }
 
     func loadFromFile(sessionId: String, cwd: String) async {
-        guard !loadedSessions.contains(sessionId) else { return }
-        loadedSessions.insert(sessionId)
+        guard !jsonlParsedSessions.contains(sessionId) else { return }
+        jsonlParsedSessions.insert(sessionId)
         await SessionStore.shared.process(.loadHistory(sessionId: sessionId, cwd: cwd))
     }
 
@@ -98,7 +105,7 @@ class ChatHistoryManager: ObservableObject {
     }
 
     func clearHistory(for sessionId: String) {
-        loadedSessions.remove(sessionId)
+        jsonlParsedSessions.remove(sessionId)
         histories.removeValue(forKey: sessionId)
         Task {
             await SessionStore.shared.process(.sessionEnded(sessionId: sessionId))
@@ -114,7 +121,6 @@ class ChatHistoryManager: ObservableObject {
             let filteredItems = filterOutSubagentTools(session.chatItems)
             newHistories[session.sessionId] = filteredItems
             newAgentDescriptions[session.sessionId] = session.subagentState.agentDescriptions
-            loadedSessions.insert(session.sessionId)
         }
         histories = newHistories
         agentDescriptions = newAgentDescriptions
